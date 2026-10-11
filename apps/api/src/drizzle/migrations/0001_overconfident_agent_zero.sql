@@ -1,0 +1,2 @@
+DROP INDEX "idx_voucher_series_lookup";--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_voucher_series_unique" ON "voucher_series" USING btree ("company_id","voucher_type","location_prefix","financial_year_code");

@@ -20,5 +20,12 @@
     "turbo": "^2.4.2",
     "typescript": "^5.7.3"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "argon2",
+      "esbuild",
+      "msgpackr-extract"
+    ]
+  },
   "packageManager": "pnpm@11.23.0"
 }

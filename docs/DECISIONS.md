@@ -9,7 +9,7 @@ This document records the architectural and design decisions, rationale, and cho
 
 ## DEC-002: Base Unit Storage with Dual Display Representation
 - **Context**: Site receipts and issues happen in bags, brass, metric tonnes (MT), cum, kg, litres, trips, or numbers.
-- **Decision**: Every stock movement row in `stock_ledger` and `stock_balance` stores quantity strictly normalized to the item's primary base unit (`qty_in`, `qty_out`, `running_qty`). The voucher line preserves `entered_qty` and `entered_unit_id` along with the conversion multiplier for audit and display faithfulness.
+- **Decision**: Every stock movement row in `stock_ledger` and `stock_balance` stores quantity strictly normalized to the item's primary base unit (`qty_in`, `qty_out`, `running_qty`). The voucher line preserves `entered_qty` and `entered_unit_code` along with the conversion multiplier for audit and display faithfulness.
 - **Trace**: MAT-12, Non-negotiable rule #2.
 
 ## DEC-003: Location-Centric Multi-Entity Topology
@@ -45,3 +45,24 @@ This document records the architectural and design decisions, rationale, and cho
 ## DEC-008: Indian Locale & Regulatory Defaults
 - **Context**: Road and civil works in India require INR currency format (`en-IN` lakh/crore: `₹ 12,34,567.00`), GST rates (0%, 5%, 12%, 18%, 28%), TDS deductions, financial years running April 1 to March 31, and Asia/Kolkata timezone (`DD-MM-YYYY` dates).
 - **Decision**: Encapsulate all formatting in `@civil/shared` and enforce standard FY calculations based on April 1 boundaries.
+- **Trace**: Non-negotiable rule #1, SEC-04.
+
+## DEC-009: Offline Draft Autosaving via IndexedDB
+- **Context**: Site engineers enter daily consumption, fuel dispense, and machine hours on mobile/tablet connections in rural road stretches where cellular connectivity frequently drops.
+- **Decision**: Store half-filled daily entry forms in browser IndexedDB via `idb-keyval` on every keystroke. When a network submit fails, the data is preserved locally with an offline status banner, allowing one-click retry once connection is restored.
+- **Trace**: Section 2 (Frontend), Section 8.
+
+## DEC-010: Plant Raw-Material Allocation Decomposition (PLT-13)
+- **Context**: When hot mix asphalt (BC/DBM) or concrete is produced at a plant and dispatched to multiple sites, reporting how many metric tonnes of Bitumen VG-30 or Cement went into Site A vs Site B is traditionally complicated.
+- **Decision**: Introduce `plant_raw_material_allocations`. Upon each dispatch line, the theoretical recipe consumption is decomposed item-by-item (Bitumen VG-30, 20mm, 10mm, dust) and recorded against the recipient `site_id`. Site-wise bitumen consumption queries become immediate single-table lookups.
+- **Trace**: PLT-13, Section 7.
+
+## DEC-011: Fuel Load Variance Modeling (FUEL-07)
+- **Context**: Diesel theft and excessive consumption are primary risks in civil fleets.
+- **Decision**: Model `fuel_loads` with both `odometer_reading` and `hour_meter_reading`. Compute `expected_litres = km / standard_kmpl` or `hours * standard_lph`. Calculate variance between consecutive full-tank fills (`is_full_tank_fill = true`). Flag variances exceeding 15% as automated BullMQ audit anomalies (ALT-06).
+- **Trace**: FUEL-07, Section 7.
+
+## DEC-012: In-Transit Transfer Isolation (STR-01 / MAT-05)
+- **Context**: Transferring 500 bags of cement from Central Godown to a highway site takes 1–2 days of road transit. The material must not appear as available stock at the site until verified.
+- **Decision**: Every site and plant is provisioned with a virtual `IN_TRANSIT` location. The dispatch voucher decrements the origin store and increments `IN_TRANSIT`. The destination site sees pending inward challans and clicks "Confirm Receipt", which moves stock from `IN_TRANSIT` into the site's physical yard.
+- **Trace**: STR-01, MAT-05.

@@ -34,3 +34,4 @@ Thumbs.db
 minio-data
 uploads
 temp
+.pgdata
