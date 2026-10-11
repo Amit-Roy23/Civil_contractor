@@ -16,6 +16,7 @@ import { PlantModule } from './plant/plant.module.js';
 import { ContractModule } from './contract/contract.module.js';
 import { CostingModule } from './costing/costing.module.js';
 import { AlertsModule } from './alerts/alerts.module.js';
+import { AppController } from './app.controller.js';
 
 @Module({
   imports: [
@@ -55,5 +56,6 @@ import { AlertsModule } from './alerts/alerts.module.js';
     CostingModule,
     AlertsModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

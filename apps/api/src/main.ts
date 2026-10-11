@@ -26,8 +26,10 @@ async function bootstrap() {
   // 4. Global Interceptors (ROLE-03: Rate & Amount masking)
   app.useGlobalInterceptors(new FieldMaskingInterceptor());
 
-  // 5. Global API Prefix
-  app.setGlobalPrefix('api');
+  // 5. Global API Prefix (exclude root redirect and health check)
+  app.setGlobalPrefix('api', {
+    exclude: ['/', 'health'],
+  });
 
   // 6. OpenAPI / Swagger Documentation at /api/docs
   const config = new DocumentBuilder()
