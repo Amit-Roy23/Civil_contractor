@@ -1,6 +1,6 @@
 import { pgTable, uuid, varchar, text, timestamp, numeric, integer, boolean } from 'drizzle-orm/pg-core';
-import { companies, sites, locations, items, vehicles, recipes, suppliers, subcontractors, workers } from './masters';
-import { users } from './core';
+import { companies, sites, locations, items, vehicles, recipes, suppliers, subcontractors, workers } from './masters.js';
+import { users } from './core.js';
 
 // --- FUEL MODULE (FUEL-07) ---
 // TODO(FUEL-01): Requisitions & bulk fuel purchases

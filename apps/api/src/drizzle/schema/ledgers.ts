@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, text, timestamp, numeric, index, uniqueIndex } from 'drizzle-orm/pg-core';
-import { companies, sites, locations, items, boqItems } from './masters';
+import { companies, sites, locations, items, boqItems } from './masters.js';
 
 // Stock Ledger (Section 4.3 - Append-Only)
 export const stockLedger = pgTable(

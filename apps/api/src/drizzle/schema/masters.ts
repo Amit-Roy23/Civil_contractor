@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, text, timestamp, boolean, integer, numeric } from 'drizzle-orm/pg-core';
-import { users } from './core';
+import { users } from './core.js';
 
 // Companies (MST-01)
 export const companies = pgTable('companies', {

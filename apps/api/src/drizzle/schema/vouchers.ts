@@ -1,6 +1,6 @@
 import { pgTable, uuid, varchar, text, timestamp, numeric, integer, boolean } from 'drizzle-orm/pg-core';
-import { companies, sites, locations, items, suppliers, boqItems } from './masters';
-import { users, financialYears } from './core';
+import { companies, sites, locations, items, suppliers, boqItems } from './masters.js';
+import { users, financialYears } from './core.js';
 
 // --- Purchase Orders (PUR-03) ---
 export const purchaseOrders = pgTable('purchase_orders', {
