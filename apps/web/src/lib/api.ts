@@ -11,7 +11,7 @@ export class ApiError extends Error {
 }
 
 class ApiClient {
-  private baseUrl = '/api';
+  private baseUrl = import.meta.env.VITE_API_URL || '/api';
 
   private getToken(): string | null {
     return localStorage.getItem('civil_token');
