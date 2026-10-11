@@ -1,0 +1,24 @@
+{
+  "name": "civil-contractor-erp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Works Contract Management ERP for Indian Civil & Road Contractors",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:migrate": "pnpm --filter @civil/api db:migrate",
+    "db:seed": "pnpm --filter @civil/api db:seed",
+    "db:studio": "pnpm --filter @civil/api db:studio",
+    "clean": "turbo run clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.0",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.4.2",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@11.23.0"
+}
