@@ -72,7 +72,7 @@ export default function Login() {
             <Building2 className="w-5 h-5" />
           </div>
           <div>
-            <div className="font-bold tracking-tight">Arohon WCM</div>
+            <div className="font-bold tracking-tight">WCM</div>
             <div className="text-[11px] text-white/60">Works Contract Management</div>
           </div>
         </div>

@@ -126,7 +126,7 @@ function Brand({ collapsed }: { collapsed?: boolean }) {
       </div>
       {!collapsed && (
         <div className="min-w-0">
-          <div className="text-white font-bold text-[15px] leading-tight tracking-tight">Arohon WCM</div>
+          <div className="text-white font-bold text-[15px] leading-tight tracking-tight">WCM</div>
           <div className="text-[11px] text-side-fg/60 truncate">{db.company.name.replace(' Pvt. Ltd.', '')}</div>
         </div>
       )}
