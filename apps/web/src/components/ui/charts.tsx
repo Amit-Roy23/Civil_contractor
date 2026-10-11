@@ -237,7 +237,8 @@ export function Donut({ segments, size = 168, center, format = (n) => n.toLocale
   const C = 2 * Math.PI * R;
   let acc = 0;
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-5">
+    <div className="@container">
+    <div className="flex flex-col @[440px]:flex-row items-center gap-5">
       <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
           <circle cx={size / 2} cy={size / 2} r={R} fill="none" stroke="var(--surface-3)" strokeWidth={sw} />
@@ -277,7 +278,7 @@ export function Donut({ segments, size = 168, center, format = (n) => n.toLocale
           )}
         </div>
       </div>
-      <div className="w-full space-y-1.5">
+      <div className="w-full min-w-0 space-y-1.5">
         {segments.map((s, i) => (
           <div key={s.label} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} className={cn('flex items-center justify-between gap-3 text-[13px] px-2 py-1 rounded-lg transition-colors', hover === i && 'bg-surface-3')}>
             <span className="inline-flex items-center gap-2 text-fg-2 min-w-0">
@@ -290,6 +291,7 @@ export function Donut({ segments, size = 168, center, format = (n) => n.toLocale
           </div>
         ))}
       </div>
+    </div>
     </div>
   );
 }

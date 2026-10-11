@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeftRight, Ban, Boxes, CircleCheck, ClipboardList, Hammer, PackageCheck, Plus, Scale, Trash2, Truck, Undo2 } from 'lucide-react';
+import { ArrowLeftRight, Ban, Boxes, CircleCheck, ClipboardList, Hammer, PackageCheck, Scale, Trash2, Truck, Undo2 } from 'lucide-react';
 import { useDB, insert, update, decide, nextNo } from '../../data/store';
 import { useSession } from '../../data/session';
 import { itemLedger, lookup, materialsInTransit, stockRegister, storeValue, theoreticalVsActual, toolsBalance, lowStock, type TransitRow } from '../../data/selectors';
@@ -8,7 +8,7 @@ import type { ID, StockLine, StockTxn, StockTxnType } from '../../data/types';
 import { useSiteFilter } from '../../components/layout/AppShell';
 import { Badge, Button, Callout, Card, CardHeader, Drawer, KV, Modal, PageHeader, Section, Stat, StatusBadge, toast } from '../../components/ui/core';
 import { DataTable, type Column } from '../../components/ui/DataTable';
-import { Combo, DateRangePicker, Field, Input, NumberInput, Segmented, Select, Textarea, AttachField } from '../../components/ui/fields';
+import { Combo, DateRangePicker, Field, Input, NumberInput, Select, Textarea, AttachField } from '../../components/ui/fields';
 import { ColumnChart } from '../../components/ui/charts';
 import { date, dateTime, inr, inrCompact, qty, today } from '../../lib/format';
 import { cn, round, sum } from '../../lib/utils';
@@ -86,10 +86,10 @@ function StockTab() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger">
-        <Stat label="Stock value" value={s.showRates ? value : rows.length} format={s.showRates ? inrCompact : (x) => `${Math.round(x)} items`} icon={<Boxes className="w-[18px] h-[18px]" />} tone="brand" sub={s.showRates ? `${rows.length} materials` : 'rates hidden'} />
+        <Stat label={s.showRates ? 'Stock value' : 'Materials in stock'} value={s.showRates ? value : rows.length} format={s.showRates ? inrCompact : (x) => `${Math.round(x)} items`} icon={<Boxes className="w-[18px] h-[18px]" />} tone="brand" sub={s.showRates ? `${rows.length} materials` : 'rates hidden'} />
         <Stat label="Consumed in period" value={s.showRates ? sum(rows, (r) => r.consumedValue) : sum(rows, (r) => (r.consumed ? 1 : 0))} format={s.showRates ? inrCompact : (x) => `${Math.round(x)} items`} icon={<ClipboardList className="w-[18px] h-[18px]" />} tone="info" />
-        <Stat label="Below minimum" value={lows.length} format={(x) => `${Math.round(x)} items`} icon={<Scale className="w-[18px] h-[18px]" />} tone={lows.length ? 'bad' : 'good'} sub={lows.slice(0, 2).map((l) => n.mat(l.materialId)).join(', ') || 'All above minimum'} />
-        <Stat label="In transit to here" value={transit.length} format={(x) => `${Math.round(x)} loads`} icon={<Truck className="w-[18px] h-[18px]" />} tone="violet" onClick={() => navigate('/inventory/transit')} sub="Awaiting receipt" />
+        <Stat label="Below minimum" value={lows.length} format={(x) => `${Math.round(x)} item${Math.round(x) === 1 ? '' : 's'}`} icon={<Scale className="w-[18px] h-[18px]" />} tone={lows.length ? 'bad' : 'good'} sub={lows.slice(0, 2).map((l) => n.mat(l.materialId)).join(', ') || 'All above minimum'} />
+        <Stat label="In transit to here" value={transit.length} format={(x) => `${Math.round(x)} load${Math.round(x) === 1 ? '' : 's'}`} icon={<Truck className="w-[18px] h-[18px]" />} tone="violet" onClick={() => navigate('/inventory/transit')} sub="Awaiting receipt" />
       </div>
       <DataTable
         title={`Stock register — ${n.store(store)}`}
@@ -740,4 +740,3 @@ function DailyTab() {
   );
 }
 
-export { Plus };

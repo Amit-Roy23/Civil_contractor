@@ -19,7 +19,9 @@ export interface Session {
 export function buildSession(db: DB, userId: ID): Session | null {
   const user = db.users.find((u) => u.id === userId && u.active);
   if (!user) return null;
-  const role = db.roles.find((r) => r.id === user.roleId)!;
+  const r0 = db.roles.find((r) => r.id === user.roleId)!;
+  // Infinity does not survive JSON (journal) — treat a missing limit as unlimited
+  const role = { ...r0, approvalLimit: r0.approvalLimit ?? Infinity };
   const allSites = role.allSites;
   const siteIds = allSites ? db.sites.map((s) => s.id) : user.siteIds;
   const plantIds = allSites || role.id === 'plant' ? (user.plantIds.length ? user.plantIds : db.plants.map((p) => p.id)) : user.plantIds;
@@ -46,4 +48,23 @@ export function useSession(): Session {
   const id = getCurrentUserId();
   const s = useMemo(() => buildSession(db, id), [db, id]);
   return s!;
+}
+
+/** which pending approvals a role should see (2.3 role table: who approves what) */
+export function approvalVisible(s: Session, a: { module: string; siteId?: ID }): boolean {
+  switch (s.role.id) {
+    case 'owner':
+    case 'accountant':
+      return true;
+    case 'store':
+      return !a.siteId && (a.module === 'Inventory' || a.module === 'Purchase');
+    case 'engineer':
+      return !!a.siteId && s.siteIds.includes(a.siteId) && ['Inventory', 'Expenses', 'Labour', 'Fleet'].includes(a.module);
+    case 'plant':
+      return !a.siteId && (a.module === 'Inventory' || a.module === 'Purchase');
+    case 'fleet':
+      return a.module === 'Fleet';
+    default:
+      return s.seesSite(a.siteId);
+  }
 }

@@ -22,7 +22,7 @@ import { navigate, useLocation } from '../../lib/router';
 import { setPref, usePrefs } from '../../lib/prefs';
 import { cn, initials } from '../../lib/utils';
 import { useDB, setCurrentUser, markNotificationsRead, resetDemo } from '../../data/store';
-import { useSession } from '../../data/session';
+import { approvalVisible, useSession } from '../../data/session';
 import { alerts, pendingApprovals } from '../../data/selectors';
 import { Badge, Button, Modal, toast } from '../ui/core';
 import { relTime } from '../../lib/format';
@@ -64,7 +64,7 @@ function NavLinks({ onNav, collapsed }: { onNav?: () => void; collapsed?: boolea
   const { segs } = useLocation();
   const s = useSession();
   const db = useDB();
-  const approvals = useMemo(() => pendingApprovals(db).filter((a) => s.seesSite(a.siteId)).length, [db, s]);
+  const approvals = useMemo(() => pendingApprovals(db).filter((a) => approvalVisible(s, a)).length, [db, s]);
   const alertCount = useMemo(() => alerts(db).filter((a) => s.seesSite(a.siteId)).length, [db, s]);
   const groups = ['Overview', 'Operations', 'Commercial', 'Control'] as const;
   const active = (n: NavModule) => (n.path === '/' ? segs.length === 0 : `/${segs[0]}` === n.path);
@@ -177,7 +177,7 @@ function Notifications() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const al = useMemo(() => alerts(db).filter((a) => s.seesSite(a.siteId)), [db, s]);
-  const ap = useMemo(() => pendingApprovals(db).filter((a) => s.seesSite(a.siteId)), [db, s]);
+  const ap = useMemo(() => pendingApprovals(db).filter((a) => approvalVisible(s, a)), [db, s]);
   const notes = db.notifications.slice().reverse();
   const unread = notes.filter((n) => !n.read).length + al.filter((a) => a.severity === 'critical').length;
   useEffect(() => {
@@ -364,9 +364,9 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
         <kbd className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-surface border border-line">Ctrl K</kbd>
       </button>
       <div className="flex-1" />
-      <Badge tone="neutral" className="hidden sm:inline-flex">
-        FY {db.company.fy}
-      </Badge>
+      <span className="hidden sm:block">
+        <Badge tone="neutral">FY {db.company.fy}</Badge>
+      </span>
       <OnlineDot />
       <Button variant="ghost" size="icon" className="md:hidden" onClick={onSearch} aria-label="Search">
         <Search className="w-5 h-5" />
@@ -385,7 +385,7 @@ function BottomNav({ onMenu, onQuick }: { onMenu: () => void; onQuick: () => voi
   const { segs } = useLocation();
   const s = useSession();
   const db = useDB();
-  const ap = useMemo(() => pendingApprovals(db).filter((a) => s.seesSite(a.siteId)).length, [db, s]);
+  const ap = useMemo(() => pendingApprovals(db).filter((a) => approvalVisible(s, a)).length, [db, s]);
   const items = [
     { path: '/', label: 'Home', icon: NAV[0]!.icon, on: segs.length === 0 },
     { path: '/approvals', label: 'Approve', icon: NAV[1]!.icon, on: segs[0] === 'approvals', count: ap },

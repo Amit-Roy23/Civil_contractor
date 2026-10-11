@@ -16,6 +16,39 @@ This system provides live **site-wise stock, cost, and profit/loss** governance,
 
 ---
 
+## Web app — client demo
+
+The web app in `apps/web` covers **every module in the requirements specification** (masters, site inventory,
+central store & purchase, labour, expenses, vehicles & fuel, plants, contracts & RA billing, site costing,
+reports, alerts, approvals, roles, settings and audit log). Requirement-by-requirement mapping:
+[`docs/REQUIREMENTS_TRACE.md`](docs/REQUIREMENTS_TRACE.md).
+
+It currently runs in **demo mode**: sample data for *Arohon Infra Projects Pvt. Ltd.* (5 sites in Assam, a hot-mix
+plant, a batching plant and a stone crusher) is generated in the browser for the current date, so every screen
+opens instantly and nothing depends on the API being awake. Any entries you make are kept in that browser
+(user menu › *Reset demo data* restores the original sample).
+
+```bash
+pnpm install
+pnpm --filter @civil/web dev      # http://localhost:5173
+pnpm --filter @civil/web build    # static build in apps/web/dist (Vercel)
+```
+
+**Demo sign-in** — on the login screen pick a role card, or:
+
+| Role | Username | Mobile (OTP `123456`) | Sees |
+|---|---|---|---|
+| Owner / Admin | `owner` (2FA code `123456`) | 98640 10001 | Everything |
+| Accountant | `accounts` | 98640 10002 | All sites, purchases, payments, bills |
+| Store keeper | `store` | 98640 10003 | Central store, rates hidden |
+| Site engineer | `engineer` | 98640 10004 | NH-27 Nagaon only, rates hidden |
+| Plant in-charge | `plant` | 98640 10008 | Plants |
+| Fleet in-charge | `fleet` | 98640 10009 | Vehicles, fuel, maintenance |
+
+Any password of 4+ characters works in the demo. The user menu (top right) switches role instantly.
+
+---
+
 ## 2. Tech Stack
 
 - **Monorepo**: Turborepo + `pnpm workspaces`, strict TypeScript throughout.
@@ -28,10 +61,10 @@ This system provides live **site-wise stock, cost, and profit/loss** governance,
   - **Security & Scoping**: Argon2 password hashing, JWT authentication, `ScopeService` request-scoped location isolation (ROLE-02), and `FieldMaskingInterceptor` commercial rate stripping (ROLE-03).
   - **Pino & Swagger**: Structured JSON logging and OpenAPI documentation served at `/api/docs`.
 - **Frontend (`apps/web`)**:
-  - **React 19 + Vite SPA**: Route-level code splitting, lightweight initial bundle (~118 KB gzipped).
-  - **TanStack Query v5**: Server state caching, background refetching, and offline resiliency.
-  - **Tailwind CSS v4 + Radix UI + Lucide React**: Dark modern theme with responsive tablet touch targets.
-  - **IndexedDB Draft Persistence**: Uses `idb-keyval` to autosave uncommitted daily vouchers on every keystroke.
+  - **React 19 + Vite + Tailwind CSS v4**, TypeScript strict. Route-level code splitting (one chunk per module).
+  - Hand-built UI kit (data table with Excel/PDF export, drawers, charts in plain SVG) — no heavy UI or chart libraries; ~138 KB gzipped app shell.
+  - Light and dark theme, fully responsive from phone to desktop, subtle animations that respect *reduce motion*.
+  - **Demo data engine** in the browser (`apps/web/src/data`): realistic sample data for 5 sites, 3 plants, 22 vehicles, 52 workers and 75 days of transactions, plus the full business logic (stock ledger with weighted-average/FIFO, plant costing, fuel efficiency, site cost sheet, alerts).
 - **Shared Packages (`packages/*`)**:
   - `@civil/shared`: Zod DTO schemas, enums, permission keys, Decimal helpers, unit conversion tables.
   - `@civil/ui`: Shared UI components, input formatters, and status badges.

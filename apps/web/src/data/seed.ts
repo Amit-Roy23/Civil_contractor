@@ -169,9 +169,10 @@ export function buildSeed(T: string): DB {
   function ensure(store: string, materialId: string, need: number, date: string) {
     const m = mat[materialId]!;
     const have = getBal(store, materialId);
-    const buffer = store === 'cs' ? m.minStock : m.minStock * 0.25;
-    if (have >= need + buffer * 0.5) return;
-    const qty = Math.max(need * 2.5, m.reorderQty * (store === 'cs' ? 1 : 0.4));
+    // sites keep roughly one to two weeks of working stock
+    const buffer = store === 'cs' ? m.minStock * 1.6 : Math.max(m.minStock * 1.1, need * 5);
+    if (have >= need + buffer) return;
+    const qty = Math.max(need * (store === 'cs' ? 3 : 10), m.reorderQty * (store === 'cs' ? 1.5 : 1));
     const q = roundQty(materialId, qty);
     if (store === 'cs') {
       purchase('cs', materialId, q, date, { partial: chance(0.08) });
@@ -390,9 +391,9 @@ export function buildSeed(T: string): DB {
   }
   const plantMeters: Record<string, number> = {};
   function ensurePlantRaw(pStore: string, materialId: string, need: number, date: string) {
-    if (getBal(pStore, materialId) >= need) return;
+    if (getBal(pStore, materialId) >= need * 2.5) return;
     const crusherOut = ['m06', 'm07', 'm08', 'm09'].includes(materialId);
-    const q = roundQty(materialId, Math.max(need * 3, mat[materialId]!.reorderQty * 0.5));
+    const q = roundQty(materialId, Math.max(need * 5, mat[materialId]!.reorderQty));
     if (crusherOut && getBal('py-p3', materialId) >= q) {
       crusherDispatch(date, materialId, q, { toPlantId: pStore.slice(3) });
     } else if (centralRouted.has(materialId)) {
@@ -439,7 +440,7 @@ export function buildSeed(T: string): DB {
 
     /* --- Crusher production (PLT-08) --- */
     if (!rain && dow !== 0 && !isToday) {
-      const input = Math.round(r(1150, 1700));
+      const input = Math.round(r(720, 1000));
       ensurePlantRaw('py-p3', 'm10', input, date);
       addBal('py-p3', 'm10', -input);
       const rec = recipe('r-crs');
@@ -636,10 +637,9 @@ export function buildSeed(T: string): DB {
     if (!isToday) for (const sid of ['fs1', 'fs2', 'fs3']) dips.push({ id: nid('dp'), createdAt: at(date, 18), createdBy: 'u9', date, sourceId: sid, litres: Math.round(fuelBal[sid]! * (sid === 'fs2' && date >= D(4) ? r(0.955, 0.965) : r(0.993, 1.004))) });
   }
   // service status relative to the current meter (MNT-01): most OK, a few due / overdue
-  M.vehicles.forEach((v, i) => {
+  M.vehicles.forEach((v) => {
     const f = v.id === 'v07' || v.id === 'v04' ? r(1.02, 1.12) : v.id === 'v13' || v.id === 'v05' || v.id === 'v11' ? r(0.92, 0.97) : r(0.15, 0.8);
     v.lastServiceAt = Math.round(meter[v.id]! - v.serviceEvery * f);
-    void i;
   });
   // vehicle statuses at "now"
   M.vehicles.forEach((v) => {
@@ -674,9 +674,8 @@ export function buildSeed(T: string): DB {
   jc('v12', 3, 'BREAKDOWN', 'Vibration motor not working; drum not vibrating', 'Under repair — motor sent to Guwahati workshop', 0, 0, 72, false);
   jc('v03', 6, 'REPAIR', 'High fuel consumption reported by fleet in-charge', 'Injector cleaning, air filter changed', 7800, 2200, 4);
   const tyreRows: Array<[string, string, string, number, number, string?]> = [['v01', 'TYRE', 'RL', 210, 34, 'Burst'], ['v01', 'TYRE', 'RR', 210, 34, 'Burst'], ['v01', 'TYRE', 'RL', 0, 34], ['v01', 'TYRE', 'RR', 0, 34], ['v02', 'TYRE', 'FL', 0, 260], ['v03', 'TYRE', 'RR1', 0, 6], ['v05', 'BATTERY', 'Main', 0, 410], ['v07', 'BATTERY', 'Main', 0, 300], ['v15', 'TYRE', 'FR', 0, 520]];
-  tyreRows.forEach(([v, kind, pos, removedAgo, fitAgo, reason], i) => {
+  tyreRows.forEach(([v, kind, pos, removedAgo, fitAgo, reason]) => {
     tyres.push({ id: nid('ty'), createdAt: at(D(fitAgo), 12), createdBy: 'u9', vehicleId: v, kind: kind as TyreRecord['kind'], serial: `${kind === 'TYRE' ? 'MRF' : 'EXIDE'}-${ri(100000, 999999)}`, position: pos, fitDate: D(fitAgo + (removedAgo ? 400 : 0)), meterAtFit: Math.round(meter[v]! - (fitAgo + (removedAgo ? 400 : 0)) * 90), removedDate: removedAgo ? D(removedAgo) : undefined, removedMeter: removedAgo ? Math.round(meter[v]! - removedAgo * 90) : undefined, reason, cost: kind === 'TYRE' ? 21500 : 14800 });
-    void i;
   });
 
   /* ---------- labour (§6) ---------- */

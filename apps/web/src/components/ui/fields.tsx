@@ -7,6 +7,11 @@ import { addDays, today, date as fmtDate } from '../../lib/format';
 const inputBase =
   'w-full h-10 px-3 rounded-xl bg-surface border border-line text-sm text-fg placeholder:text-muted transition-colors focus:outline-none focus:border-brand focus:ring-4 focus:ring-brand/15 disabled:bg-surface-3 disabled:text-muted';
 
+/** drop the default full width when the caller sets its own width */
+function iw(className?: string) {
+  return className && /(^|\s)(w-|max-w-|min-w-)/.test(className) ? inputBase.replace('w-full ', '') : inputBase;
+}
+
 export function Field({ label, hint, error, required, children, className }: { label?: string; hint?: React.ReactNode; error?: string | null; required?: boolean; children: React.ReactNode; className?: string }) {
   return (
     <label className={cn('block min-w-0', className)}>
@@ -23,7 +28,7 @@ export function Field({ label, hint, error, required, children, className }: { l
 }
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { prefix?: string; suffix?: string }>(({ className, prefix, suffix, ...rest }, ref) => {
-  if (!prefix && !suffix) return <input ref={ref} className={cn(inputBase, className)} {...rest} />;
+  if (!prefix && !suffix) return <input ref={ref} className={cn(iw(className), className)} {...rest} />;
   return (
     <div className="relative">
       {prefix && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted pointer-events-none">{prefix}</span>}
@@ -94,7 +99,7 @@ export function Combo({ value, onChange, options, placeholder = 'Select…', cla
   };
   return (
     <>
-      <button type="button" ref={btn} disabled={disabled} onClick={() => setOpen((o) => !o)} className={cn(inputBase, 'flex items-center justify-between text-left gap-2', className)}>
+      <button type="button" ref={btn} disabled={disabled} onClick={() => setOpen((o) => !o)} className={cn(iw(className), 'flex items-center justify-between text-left gap-2', className)}>
         <span className={cn('truncate', !sel && 'text-muted')}>{sel ? sel.label : placeholder}</span>
         <ChevronDown className={cn('w-4 h-4 text-muted shrink-0 transition-transform', open && 'rotate-180')} />
       </button>
@@ -185,7 +190,7 @@ export function Segmented<T extends string>({ value, onChange, options, classNam
   return (
     <div className={cn('inline-flex p-1 rounded-xl bg-surface-3/70 gap-1', className)}>
       {options.map((o) => (
-        <button type="button" key={o.value} onClick={() => onChange(o.value)} className={cn('flex-1 px-3 h-8 rounded-lg text-[13px] font-medium transition-all', value === o.value ? 'bg-surface text-fg shadow-card' : 'text-fg-2 hover:text-fg')}>
+        <button type="button" key={o.value} onClick={() => onChange(o.value)} className={cn('flex-1 whitespace-nowrap px-3 h-8 rounded-lg text-[13px] font-medium transition-all', value === o.value ? 'bg-surface text-fg shadow-card' : 'text-fg-2 hover:text-fg')}>
           {o.label}
         </button>
       ))}

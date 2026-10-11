@@ -303,7 +303,7 @@ export function Toaster() {
   }, []);
   const icon = { good: <CircleCheck className="w-5 h-5 text-good" />, bad: <CircleX className="w-5 h-5 text-bad" />, warn: <TriangleAlert className="w-5 h-5 text-warn" />, info: <Info className="w-5 h-5 text-info" /> };
   return createPortal(
-    <div className="fixed z-[70] bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 lg:left-auto lg:right-6 lg:translate-x-0 flex flex-col gap-2 w-[calc(100%-2rem)] max-w-sm pointer-events-none">
+    <div className="fixed z-[70] bottom-20 lg:bottom-auto lg:top-20 left-1/2 -translate-x-1/2 lg:left-auto lg:right-6 lg:translate-x-0 flex flex-col gap-2 w-[calc(100%-2rem)] max-w-sm pointer-events-none">
       {items.map((t) => (
         <div key={t.id} className="pointer-events-auto bg-surface border border-line rounded-2xl shadow-pop px-4 py-3 flex gap-3 anim-pop">
           {icon[t.tone]}

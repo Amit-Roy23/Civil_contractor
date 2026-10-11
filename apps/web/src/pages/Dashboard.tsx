@@ -20,7 +20,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useDB } from '../data/store';
-import { useSession } from '../data/session';
+import { approvalVisible, useSession } from '../data/session';
 import {
   alerts,
   costEntries,
@@ -93,7 +93,7 @@ export default function Dashboard() {
 
   const costMix = useMemo(() => COST_HEADS.map((h) => ({ label: COST_HEAD_LABEL[h], value: sum(cards, (c) => c.heads[h]) })).filter((x) => x.value > 0), [cards]);
 
-  const approvals = useMemo(() => pendingApprovals(db).filter((a) => s.seesSite(a.siteId) && (!siteId || !a.siteId || a.siteId === siteId)), [db, s, siteId]);
+  const approvals = useMemo(() => pendingApprovals(db).filter((a) => approvalVisible(s, a) && (!siteId || !a.siteId || a.siteId === siteId)), [db, s, siteId]);
   const al = useMemo(() => alerts(db).filter((a) => s.seesSite(a.siteId) && (!siteId || !a.siteId || a.siteId === siteId)), [db, s, siteId]);
   const payables = useMemo(() => payablesAgeing(db), [db]);
   const receivables = useMemo(() => receivablesAgeing(db).filter((r) => visibleSites.has(r.siteId)), [db, siteId]); // eslint-disable-line react-hooks/exhaustive-deps

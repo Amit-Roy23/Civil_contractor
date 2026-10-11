@@ -660,7 +660,6 @@ export interface HireBill {
 export function hireBills(db: DB): HireBill[] {
   return memo(db, 'hire', () => {
     const out: HireBill[] = [];
-    const lk = lookup(db);
     for (const v of db.vehicles.filter((x) => x.ownership === 'HIRED')) {
       const logs = db.logs.filter((l) => l.vehicleId === v.id);
       for (const [mo, rows] of Object.entries(groupBy(logs, (l) => monthOf(l.date)))) {
@@ -686,7 +685,6 @@ export function hireBills(db: DB): HireBill[] {
         if (!work.length && v.siteId) bySite[v.siteId] = gross;
         const bd = `${mo}-${String(lastDay).padStart(2, '0')}` > today() ? today() : `${mo}-${String(lastDay).padStart(2, '0')}`;
         out.push({ vehicleId: v.id, vehicleCode: v.code, supplierId: v.ownerSupplierId, month: mo, billDate: bd, basis: v.hireBasis || '', units: round(units, 1), billedUnits: round(billed, 2), rate: v.hireRate || 0, gross, fuelDeduction, advance: 0, net, bySite });
-        void lk;
       }
     }
     return out;
@@ -779,11 +777,9 @@ export function fuelTankLedger(db: DB, sourceId: ID) {
     let bal = src?.type === 'OWN_TANK' ? 0 : sourceId === 'fs2' ? 3100 : sourceId === 'fs3' ? 2200 : 0;
     if (src?.type === 'BOWSER') ev.unshift({ date: ev[0]?.date || today(), type: 'Opening', ref: 'Opening stock', inL: bal, outL: 0, order: -1 }), (bal = 0);
     const dipsBy = Object.fromEntries(db.dips.filter((d) => d.sourceId === sourceId).map((d) => [d.date, d.litres]));
-    let lastDate = '';
     for (const e of ev) {
       bal += e.inL - e.outL;
       items.push({ date: e.date, type: e.type, ref: e.ref, inL: e.inL, outL: e.outL, balance: round(bal, 1) });
-      lastDate = e.date;
     }
     // attach dip to last row of each day
     const byDate = groupBy(items, (i) => i.date);
@@ -794,7 +790,6 @@ export function fuelTankLedger(db: DB, sourceId: ID) {
         last.variance = round(dipsBy[d]! - last.balance, 1);
       }
     }
-    void lastDate;
     return items;
   });
 }
@@ -802,10 +797,8 @@ export function fuelTankLedger(db: DB, sourceId: ID) {
 /* ================= Plant (§9) ================= */
 
 export function recipeForDispatch(db: DB, d: Dispatch) {
-  const lk = lookup(db);
   const site = d.siteId;
   return db.recipes.find((r) => r.productId === d.productId && r.siteId === site) || db.recipes.find((r) => r.productId === d.productId && !r.siteId && !r.split);
-  void lk;
 }
 
 /** PLT-13 — raw material allocated to receiving sites through dispatches */
