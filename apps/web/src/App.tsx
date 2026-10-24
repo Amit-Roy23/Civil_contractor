@@ -1,8 +1,9 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import { AppShell } from './components/layout/AppShell';
-import { PageSkeleton, Toaster, toast } from './components/ui/core';
+import { Button, PageSkeleton, Toaster, toast } from './components/ui/core';
 import { useLocation, navigate } from './lib/router';
-import { getCurrentUserId, setCurrentUser, useDB } from './data/store';
+import { getCurrentUserId, setCurrentUser, useApiState, useDB } from './data/store';
+import { API_MODE } from './data/api';
 import { buildSession } from './data/session';
 import { navByPath } from './components/layout/nav';
 import Login from './pages/Login';
@@ -48,8 +49,31 @@ function useIdleTimeout(minutes: number, active: boolean) {
 export default function App() {
   const db = useDB();
   const { segs } = useLocation();
+  const conn = useApiState();
   const session = buildSession(db, getCurrentUserId());
   useIdleTimeout(db.settings.sessionTimeoutMin, !!session);
+
+  if (API_MODE && conn.phase === 'loading') {
+    return (
+      <div className="min-h-full flex flex-col items-center justify-center gap-3 bg-bg text-fg-2 text-sm">
+        <span className="w-10 h-10 rounded-full border-[3px] border-line border-t-brand animate-spin" />
+        Loading your company data…
+      </div>
+    );
+  }
+  if (API_MODE && conn.phase === 'error') {
+    return (
+      <div className="min-h-full flex flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
+        <div className="text-lg font-semibold">Can't reach the server</div>
+        <p className="text-sm text-fg-2 max-w-sm">{conn.error}</p>
+        <div className="flex gap-2">
+          <Button onClick={() => setCurrentUser('')}>Sign out</Button>
+          <Button variant="primary" onClick={() => location.reload()}>Try again</Button>
+        </div>
+        <Toaster />
+      </div>
+    );
+  }
 
   if (!session) {
     return (

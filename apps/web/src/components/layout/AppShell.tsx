@@ -21,7 +21,8 @@ import { NAV, type NavModule } from './nav';
 import { navigate, useLocation } from '../../lib/router';
 import { setPref, usePrefs } from '../../lib/prefs';
 import { cn, initials } from '../../lib/utils';
-import { useDB, setCurrentUser, markNotificationsRead, resetDemo } from '../../data/store';
+import { useDB, setCurrentUser, markNotificationsRead, resetDemo, useApiState } from '../../data/store';
+import { API_MODE } from '../../data/api';
 import { approvalVisible, useSession } from '../../data/session';
 import { alerts, pendingApprovals } from '../../data/selectors';
 import { Badge, Button, Modal, toast } from '../ui/core';
@@ -257,10 +258,13 @@ function UserMenu() {
     window.addEventListener('mousedown', h);
     return () => window.removeEventListener('mousedown', h);
   }, [open]);
+  const conn = useApiState();
+  /** user switching and reset are for the demo company only */
+  const demo = !API_MODE || conn.isDemo;
   const switchTo = (id: string) => {
+    const u = db.users.find((x) => x.id === id)!;
     setCurrentUser(id);
     setOpen(false);
-    const u = db.users.find((x) => x.id === id)!;
     toast.info(`Signed in as ${u.name}`, db.roles.find((r) => r.id === u.roleId)?.name);
     navigate('/');
   };
@@ -282,8 +286,8 @@ function UserMenu() {
               {s.role.name} · {s.allSites ? 'All sites' : `${s.siteIds.length || s.plantIds.length} assigned`}
             </div>
           </div>
-          <div className="px-2 pt-2 text-[10px] uppercase tracking-wider text-muted font-semibold px-4">Demo: switch user / role</div>
-          <div className="p-2 max-h-72 overflow-y-auto">
+          <div hidden={!demo} className="px-2 pt-2 text-[10px] uppercase tracking-wider text-muted font-semibold px-4">Demo: switch user / role</div>
+          <div hidden={!demo} className="p-2 max-h-72 overflow-y-auto">
             {db.users.map((u) => (
               <button key={u.id} onClick={() => switchTo(u.id)} className={cn('w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left hover:bg-surface-3', u.id === s.user.id && 'bg-brand-soft')}>
                 <span className="w-8 h-8 rounded-lg bg-surface-3 text-[11px] font-bold flex items-center justify-center shrink-0">{initials(u.name)}</span>
@@ -301,7 +305,7 @@ function UserMenu() {
             <button onClick={() => (navigate('/admin/settings'), setOpen(false))} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-surface-3" hidden={!s.can('admin')}>
               <UserCog className="w-4 h-4" /> Settings
             </button>
-            <button onClick={() => setConfirmReset(true)} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-surface-3">
+            <button onClick={() => setConfirmReset(true)} hidden={!demo || (API_MODE && !s.isAdmin)} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-surface-3">
               <RotateCcw className="w-4 h-4" /> Reset demo data
             </button>
             <button onClick={() => setCurrentUser('')} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-bad hover:bg-bad-soft">
@@ -317,13 +321,13 @@ function UserMenu() {
         footer={
           <>
             <Button onClick={() => setConfirmReset(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => (resetDemo(), setConfirmReset(false), setOpen(false), toast.success('Demo data restored'))}>
+            <Button variant="danger" onClick={() => (resetDemo().then(() => toast.success('Demo data restored'), (e) => toast.error('Reset failed', e.message)), setConfirmReset(false), setOpen(false))}>
               Reset
             </Button>
           </>
         }
       >
-        <p className="text-sm text-fg-2">Every entry you added or changed in this browser will be discarded and the original sample data for all sites will be restored.</p>
+        <p className="text-sm text-fg-2">{API_MODE ? 'Every entry made in the demo company — by anyone — will be discarded and the original sample data for all sites will be restored.' : 'Every entry you added or changed in this browser will be discarded and the original sample data for all sites will be restored.'}</p>
       </Modal>
     </div>
   );

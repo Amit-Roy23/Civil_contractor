@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, TriangleAlert } from 'lucide-react';
 import { NAV } from '../components/layout/nav';
 import { navigate, setQuery, useLocation } from '../lib/router';
-import { Badge, Button, Callout, Tabs } from '../components/ui/core';
-import { Combo, Field, NumberInput, presets, type DateRange } from '../components/ui/fields';
-import { useDB } from '../data/store';
+import { Badge, Button, Callout, Modal, Tabs, toast } from '../components/ui/core';
+import { Combo, Field, NumberInput, presets, Textarea, type DateRange } from '../components/ui/fields';
+import { decide, useDB } from '../data/store';
 import { useSession } from '../data/session';
 import { availability, avgRate } from '../data/ledger';
 import { lookup } from '../data/selectors';
-import type { DB, ID, Material, ModuleKey } from '../data/types';
+import type { CollectionKey, DB, ID, Material, ModuleKey } from '../data/types';
 import { daysBetween, inr, qty as fq, today } from '../lib/format';
 import { cn, round } from '../lib/utils';
 
@@ -232,4 +232,31 @@ export function useAutoOpen(trigger: string | null, open: (v: string) => void, c
 
 export function Filters({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-wrap items-center gap-2">{children}</div>;
+}
+
+/* ---------- approve / reject in place (APR-02: a reject always carries a remark) ---------- */
+export function DecideButtons({ coll, id, label, onDone, size }: { coll: CollectionKey; id: ID; label: string; onDone?: () => void; size?: 'sm' }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [remark, setRemark] = useState('');
+  return (
+    <>
+      <Button size={size} onClick={() => setRejecting(true)}>Reject</Button>
+      <Button size={size} variant="success" onClick={() => (decide(coll, id, 'APPROVED', 'Approved', label), toast.success(`${label} approved`), onDone?.())}>Approve</Button>
+      <Modal
+        open={rejecting}
+        onClose={() => setRejecting(false)}
+        title={`Reject ${label}?`}
+        footer={
+          <>
+            <Button onClick={() => setRejecting(false)}>Cancel</Button>
+            <Button variant="danger" onClick={() => (remark.trim() ? (decide(coll, id, 'REJECTED', remark.trim(), label), setRejecting(false), toast.info(`${label} rejected`), onDone?.()) : toast.error('Write why it is rejected'))}>Reject</Button>
+          </>
+        }
+      >
+        <Field label="Reason" required>
+          <Textarea autoFocus value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="The person who entered it will see this" />
+        </Field>
+      </Modal>
+    </>
+  );
 }

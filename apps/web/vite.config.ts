@@ -9,6 +9,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // shared business logic is consumed as TypeScript source (no separate build needed for Vercel)
+      '@civil/domain': path.resolve(__dirname, '../../packages/domain/src'),
     },
   },
   server: {

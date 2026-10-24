@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowRight, Building2, Factory, HardHat, KeyRound, Landmark, ShieldCheck, Smartphone, Truck, Warehouse } from 'lucide-react';
-import { useDB, setCurrentUser } from '../data/store';
+import { useDB, setCurrentUser, signedIn, signInDemo } from '../data/store';
+import { API_MODE, api, type LoginConfig } from '../data/api';
 import { Button, toast } from '../components/ui/core';
 import { Field, Input, Segmented } from '../components/ui/fields';
 import { cn, initials } from '../lib/utils';
@@ -18,8 +19,18 @@ const ROLE_META: Record<string, { icon: any; tint: string; blurb: string }> = {
 export default function Login() {
   const db = useDB();
   const [mode, setMode] = useState<'password' | 'otp'>('password');
-  const [username, setUsername] = useState('owner');
-  const [password, setPassword] = useState('demo@123');
+  const [username, setUsername] = useState(API_MODE ? '' : 'owner');
+  const [password, setPassword] = useState(API_MODE ? '' : 'demo@123');
+  const [company, setCompany] = useState(() => {
+    try {
+      return localStorage.getItem('wcm-company') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [cfg, setCfg] = useState<LoginConfig | null>(null);
+  const [ticket, setTicket] = useState('');
+  const [otpHint, setOtpHint] = useState(API_MODE ? '' : 'Demo OTP: 123456');
   const [phone, setPhone] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
@@ -28,7 +39,64 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
+  useEffect(() => {
+    if (API_MODE) api.config().then(setCfg, (e) => setErr(e.message));
+  }, []);
+
+  /** API mode: run a server call with the busy spinner and error message */
+  const run = async (fn: () => Promise<void>) => {
+    setErr('');
+    setBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const rememberCompany = () => {
+    try {
+      if (company.trim()) localStorage.setItem('wcm-company', company.trim().toLowerCase());
+    } catch {
+      /* ignore */
+    }
+  };
+  const welcome = () => navigate('/', true);
+
+  const submitApi = () =>
+    run(async () => {
+      if (mode === 'password') {
+        if (!username.trim() || !password) throw new Error('Enter username and password');
+        const r = await api.login(username.trim(), password, company.trim() || undefined);
+        rememberCompany();
+        if ('otpRequired' in r) {
+          setTicket(r.ticket);
+          setTwoFa('2fa');
+          toast.info('OTP sent', `to ${r.phone}`);
+          return;
+        }
+        await signedIn(r);
+        return welcome();
+      }
+      if (!otpSent) {
+        if (!phone.trim()) throw new Error('Enter your mobile number');
+        const r = await api.otpRequest(phone.trim(), company.trim() || undefined);
+        setTicket(r.ticket);
+        setOtpSent(true);
+        setOtpHint(r.demo ? 'Demo OTP: 123456' : `Sent to ${r.phone}`);
+        toast.info('OTP sent', r.demo ? 'Demo OTP is 123456' : `to ${r.phone}`);
+        return;
+      }
+      await signedIn(await api.otpVerify(ticket, otp));
+      rememberCompany();
+      welcome();
+    });
+
+  const verify2fa = () => (API_MODE ? run(async () => (await signedIn(await api.otpVerify(ticket, code2)), welcome())) : code2 === '123456' ? enter(twoFa!) : setErr('Incorrect code'));
+
   const enter = (userId: string) => {
+    if (API_MODE) return void run(async () => (await signInDemo(userId), welcome()));
     setBusy(true);
     setTimeout(() => {
       setCurrentUser(userId);
@@ -39,6 +107,7 @@ export default function Login() {
   };
 
   const submit = () => {
+    if (API_MODE) return void submitApi();
     setErr('');
     if (mode === 'password') {
       const u = db.users.find((x) => x.username.toLowerCase() === username.trim().toLowerCase() && x.active);
@@ -58,7 +127,9 @@ export default function Login() {
     enter(u!.id);
   };
 
-  const roles = db.roles.map((r) => ({ role: r, user: db.users.find((u) => u.roleId === r.id)! }));
+  const roles = API_MODE
+    ? (cfg?.demo?.users || []).filter((u, i, all) => all.findIndex((x) => x.roleId === u.roleId) === i).map((u) => ({ role: { id: u.roleId, name: u.role || u.roleId }, user: u }))
+    : db.roles.map((r) => ({ role: r, user: db.users.find((u) => u.roleId === r.id)! }));
 
   return (
     <div className="min-h-full flex flex-col lg:flex-row bg-bg">
@@ -83,7 +154,7 @@ export default function Login() {
             <span className="bg-gradient-to-r from-amber-300 to-orange-500 bg-clip-text text-transparent">site by site.</span>
           </h1>
           <p className="mt-4 text-sm sm:text-base text-white/70 max-w-md">Material, labour, fuel, plant output and billing for all your sites in one place, with live profit and loss for each site.</p>
-          <div className="hidden sm:grid grid-cols-3 gap-3 mt-8 max-w-md stagger">
+          <div className={cn('hidden grid-cols-3 gap-3 mt-8 max-w-md stagger', db.sites.length && 'sm:grid')}>
             {[
               [db.sites.length, 'Project sites'],
               [db.plants.length, 'Production plants'],
@@ -105,12 +176,12 @@ export default function Login() {
           {twoFa ? (
             <div className="bg-surface border border-line rounded-3xl shadow-card p-6 sm:p-8">
               <h2 className="text-xl font-bold">Two-factor verification</h2>
-              <p className="text-sm text-fg-2 mt-1">Admin accounts need a second step. Enter the 6-digit code from your authenticator app (demo: 123456).</p>
+              <p className="text-sm text-fg-2 mt-1">{API_MODE ? 'Your account needs a second step. Enter the 6-digit OTP sent to your registered mobile.' : 'Admin accounts need a second step. Enter the 6-digit code from your authenticator app (demo: 123456).'}</p>
               <div className="mt-5 space-y-4">
                 <Field label="Authenticator code" error={err}>
                   <Input autoFocus inputMode="numeric" maxLength={6} value={code2} onChange={(e) => setCode2(e.target.value.replace(/\D/g, ''))} placeholder="••••••" className="text-center tracking-[0.5em] text-lg h-12" />
                 </Field>
-                <Button variant="primary" size="lg" className="w-full justify-center" loading={busy} onClick={() => (code2 === '123456' ? enter(twoFa) : setErr('Incorrect code'))}>
+                <Button variant="primary" size="lg" className="w-full justify-center" loading={busy} onClick={() => void verify2fa()}>
                   Verify & sign in
                 </Button>
                 <button className="w-full text-sm text-muted hover:text-fg" onClick={() => (setTwoFa(null), setCode2(''), setErr(''))}>
@@ -138,6 +209,11 @@ export default function Login() {
                   submit();
                 }}
               >
+                {API_MODE && cfg?.needsCompany && (
+                  <Field label="Company code" hint="Given by your administrator">
+                    <Input value={company} onChange={(e) => setCompany(e.target.value)} autoCapitalize="none" autoComplete="organization" />
+                  </Field>
+                )}
                 {mode === 'password' ? (
                   <>
                     <Field label="Username">
@@ -149,11 +225,11 @@ export default function Login() {
                   </>
                 ) : (
                   <>
-                    <Field label="Mobile number" hint="Try 98640 10004 (site engineer)">
+                    <Field label="Mobile number" hint={API_MODE ? 'Registered mobile number or username' : 'Try 98640 10004 (site engineer)'}>
                       <Input prefix="+91" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98640 10004" disabled={otpSent} />
                     </Field>
                     {otpSent && (
-                      <Field label="OTP" error={err} hint="Demo OTP: 123456">
+                      <Field label="OTP" error={err} hint={otpHint}>
                         <Input autoFocus inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} className="tracking-[0.4em]" />
                       </Field>
                     )}
@@ -167,7 +243,7 @@ export default function Login() {
             </div>
           )}
 
-          <div className="mt-6">
+          <div className="mt-6" hidden={!roles.length}>
             <div className="flex items-center gap-3 mb-3">
               <div className="h-px flex-1 bg-line" />
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">or open the demo as</span>

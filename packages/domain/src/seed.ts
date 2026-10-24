@@ -31,10 +31,10 @@ import type {
   TyreRecord,
   WageRun,
   WorkOrder,
-} from './types';
-import { buildMasters, COMPANY, makeRng } from './seed-masters';
-import { addDays, daysBetween, fyCode, monthOf } from '../lib/format';
-import { round } from '../lib/utils';
+} from './types.js';
+import { buildMasters, COMPANY, makeRng } from './seed-masters.js';
+import { addDays, daysBetween, fyCode, monthOf } from './format.js';
+import { round } from './utils.js';
 
 export const SEED_VERSION = 3;
 export const WINDOW_DAYS = 75;
@@ -675,7 +675,7 @@ export function buildSeed(T: string): DB {
   jc('v03', 6, 'REPAIR', 'High fuel consumption reported by fleet in-charge', 'Injector cleaning, air filter changed', 7800, 2200, 4);
   const tyreRows: Array<[string, string, string, number, number, string?]> = [['v01', 'TYRE', 'RL', 210, 34, 'Burst'], ['v01', 'TYRE', 'RR', 210, 34, 'Burst'], ['v01', 'TYRE', 'RL', 0, 34], ['v01', 'TYRE', 'RR', 0, 34], ['v02', 'TYRE', 'FL', 0, 260], ['v03', 'TYRE', 'RR1', 0, 6], ['v05', 'BATTERY', 'Main', 0, 410], ['v07', 'BATTERY', 'Main', 0, 300], ['v15', 'TYRE', 'FR', 0, 520]];
   tyreRows.forEach(([v, kind, pos, removedAgo, fitAgo, reason]) => {
-    tyres.push({ id: nid('ty'), createdAt: at(D(fitAgo), 12), createdBy: 'u9', vehicleId: v, kind: kind as TyreRecord['kind'], serial: `${kind === 'TYRE' ? 'MRF' : 'EXIDE'}-${ri(100000, 999999)}`, position: pos, fitDate: D(fitAgo + (removedAgo ? 400 : 0)), meterAtFit: Math.round(meter[v]! - (fitAgo + (removedAgo ? 400 : 0)) * 90), removedDate: removedAgo ? D(removedAgo) : undefined, removedMeter: removedAgo ? Math.round(meter[v]! - removedAgo * 90) : undefined, reason, cost: kind === 'TYRE' ? 21500 : 14800 });
+    tyres.push({ id: nid('ty'), createdAt: at(D(fitAgo), 12), createdBy: 'u9', vehicleId: v, kind: kind as TyreRecord['kind'], serial: `${kind === 'TYRE' ? 'MRF' : 'EXIDE'}-${ri(100000, 999999)}`, position: pos, fitDate: D(fitAgo + (removedAgo ? 400 : 0)), meterAtFit: Math.max(0, Math.round(meter[v]! - (fitAgo + (removedAgo ? 400 : 0)) * 90)), removedDate: removedAgo ? D(removedAgo) : undefined, removedMeter: removedAgo ? Math.max(0, Math.round(meter[v]! - removedAgo * 90)) : undefined, reason, cost: kind === 'TYRE' ? 21500 : 14800 });
   });
 
   /* ---------- labour (§6) ---------- */

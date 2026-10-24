@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CircleCheck, DatabaseBackup, Eye, EyeOff, Lock, ShieldCheck, UserPlus } from 'lucide-react';
 import { useDB, insert, update, updateSettings, journalSize } from '../../data/store';
+import { API_MODE, api } from '../../data/api';
 import { useSession } from '../../data/session';
 import type { AuditEntry, ModuleKey, Perm, Role, Settings, User } from '../../data/types';
 import { Badge, Button, Callout, Card, CardHeader, Drawer, PageHeader, Section, toast } from '../../components/ui/core';
@@ -53,12 +54,16 @@ function UsersTab() {
 function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void }) {
   const db = useDB();
   const [v, setV] = useState<Partial<User>>({ ...user });
+  const [password, setPassword] = useState('');
   const role = db.roles.find((r) => r.id === v.roleId);
   const toggle = (k: 'siteIds' | 'plantIds', id: string) => setV({ ...v, [k]: (v[k] || []).includes(id) ? (v[k] || []).filter((x) => x !== id) : [...(v[k] || []), id] });
   const save = () => {
     if (!v.name || !v.username || !v.phone) return toast.error('Name, username and mobile are required');
-    if (user.id) update('users', user.id, v as any, `User ${v.name} updated`, 'User');
-    else insert('users', v as any, `User ${v.name} created`, 'User');
+    if (API_MODE && (password || !user.id) && password.length < 8) return toast.error('Password must be at least 8 characters');
+    if (user.id) {
+      update('users', user.id, v as any, `User ${v.name} updated`, 'User');
+      if (API_MODE && password) api.setUserPassword(user.id, password).catch((e) => toast.error('Password not changed', e.message));
+    } else insert('users', { ...v, ...(API_MODE ? { password } : {}) } as any, `User ${v.name} created`, 'User');
     toast.success('User saved');
     onClose();
   };
@@ -70,6 +75,11 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
           <Field label="Username" required><Input value={v.username || ''} onChange={(e) => setV({ ...v, username: e.target.value })} /></Field>
           <Field label="Mobile (OTP login)" required><Input value={v.phone || ''} onChange={(e) => setV({ ...v, phone: e.target.value })} /></Field>
           <Field label="Email"><Input value={v.email || ''} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
+          {API_MODE && (
+            <Field label={user.id ? 'New password' : 'Password'} required={!user.id} hint={user.id ? 'Leave blank to keep the current password' : 'At least 8 characters — share it with the user'}>
+              <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+          )}
           <Field label="Role"><Select value={v.roleId || ''} onChange={(x) => setV({ ...v, roleId: x })} options={db.roles.map((r) => ({ value: r.id, label: r.name }))} /></Field>
         </div>
         {!role?.allSites && (
@@ -246,7 +256,7 @@ function SettingsTab() {
             <div className="flex justify-between"><span className="text-fg-2">Previous year</span><Badge tone="neutral"><Lock className="w-3 h-3" /> Closed & locked</Badge></div>
             <div className="flex justify-between"><span className="text-fg-2">Carry forward</span><span>Stock, supplier & client balances</span></div>
             <div className="flex justify-between"><span className="text-fg-2">Backups</span><span>Daily, kept 30 days (India region)</span></div>
-            <div className="flex justify-between"><span className="text-fg-2">Changes made in this demo</span><span className="num">{journalSize()}</span></div>
+            <div className="flex justify-between" hidden={API_MODE}><span className="text-fg-2">Changes made in this demo</span><span className="num">{journalSize()}</span></div>
             {s.isAdmin && <Button className="w-full justify-center" onClick={() => toast.info('Year-end closing', 'In production this carries forward stock and balances and locks the closed period (SEC-04).')}>Close financial year…</Button>}
           </div>
         </Card>

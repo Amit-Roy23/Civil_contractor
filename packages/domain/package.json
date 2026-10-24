@@ -1,0 +1,27 @@
+{
+  "name": "@civil/domain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Business model and rules shared by the web app and the API (stock ledger, costing, approvals, permissions)",
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
+  }
+}

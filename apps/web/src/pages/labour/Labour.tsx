@@ -12,7 +12,7 @@ import { ColumnChart } from '../../components/ui/charts';
 import { addDays, date, dateShort, daysBetween, inr, inrCompact, num, qty, today } from '../../lib/format';
 import { printDocument } from '../../lib/export';
 import { cn, groupBy, round, sum } from '../../lib/utils';
-import { Money, useAutoOpen, useModuleTab, useNames, useNewParam,} from '../shared';
+import { DecideButtons, Money, useAutoOpen, useModuleTab, useNames, useNewParam,} from '../shared';
 
 const TRADES: Trade[] = ['Mason', 'Helper', 'Carpenter', 'Bar Bender', 'Operator', 'Driver', 'Electrician', 'Supervisor'];
 
@@ -646,8 +646,7 @@ function SubcontractTab() {
                 <KV cols={2} items={[['Gross', <Money key="g" v={c.gross} />], [`Retention ${wo.retentionPct}%`, <Money key="r" v={-c.retention} />], [`TDS ${wo.tdsPct}%`, <Money key="t" v={-c.tds} />], ['Material recovery (LAB-12)', <Money key="m" v={-viewBill.materialRecovery} />], ['Advance recovery', <Money key="a" v={-viewBill.advanceRecovery} />], ['Penalty', <Money key="p" v={-viewBill.penalty} />], ['Net payable', <b key="n"><Money v={c.net} /></b>]]} />
                 {viewBill.status === 'PENDING' && s.can('approvals', 'approve') && (
                   <div className="flex gap-2 justify-end">
-                    <Button onClick={() => (update('subconBills', viewBill.id, { status: 'REJECTED' }, `${viewBill.no} rejected`, 'Sub-contractor bill', undefined, 'REJECT'), setViewBill(null))}>Reject</Button>
-                    <Button variant="success" onClick={() => (update('subconBills', viewBill.id, { status: 'APPROVED' }, `${viewBill.no} approved`, 'Sub-contractor bill', undefined, 'APPROVE'), toast.success('Bill approved'), setViewBill(null))}>Approve</Button>
+                    <DecideButtons coll="subconBills" id={viewBill.id} label={viewBill.no} onDone={() => setViewBill(null)} />
                   </div>
                 )}
               </div>

@@ -11,7 +11,7 @@ import { AttachField, Combo, DateRangePicker, Field, Input, NumberInput, Select,
 import { Donut } from '../../components/ui/charts';
 import { date, inr, inrCompact, monthLabel, today } from '../../lib/format';
 import { groupBy, sum } from '../../lib/utils';
-import { DateRuleNote, entryDateRule, Money, useAutoOpen, useModuleTab, useNames, useNewParam, useRange } from '../shared';
+import { DateRuleNote, DecideButtons, entryDateRule, Money, useAutoOpen, useModuleTab, useNames, useNewParam, useRange } from '../shared';
 
 export default function Expenses() {
   const { tab, tabsEl } = useModuleTab('expenses');
@@ -62,10 +62,7 @@ function EntriesTab() {
       {view && (
         <Drawer open onClose={() => setView(null)} title={view.no} subtitle={`${n.site(view.siteId)} · ${date(view.date)}`}
           footer={view.status === 'PENDING' && s.can('approvals', 'approve') ? (
-            <>
-              <Button onClick={() => (update('expenses', view.id, { status: 'REJECTED' }, `${view.no} rejected`, 'Expense', undefined, 'REJECT'), setView(null))}>Reject</Button>
-              <Button variant="success" onClick={() => (update('expenses', view.id, { status: 'APPROVED' }, `${view.no} approved`, 'Expense', undefined, 'APPROVE'), toast.success('Expense approved'), setView(null))}>Approve</Button>
-            </>
+            <DecideButtons coll="expenses" id={view.id} label={view.no} onDone={() => setView(null)} />
           ) : undefined}>
           <div className="space-y-4">
             <StatusBadge status={view.status} />
@@ -185,7 +182,7 @@ function PettyCashTab() {
                 <div className="flex items-center gap-2">
                   <StatusBadge status={r.status} />
                   {r.status === 'PENDING' && s.can('approvals', 'approve') && (
-                    <Button size="sm" variant="success" onClick={() => (update('imprests', r.id, { status: 'APPROVED' }, `${r.no} approved`, 'Petty cash', undefined, 'APPROVE'), toast.success('Top-up approved', 'Cash transferred to site'))}>Approve</Button>
+                    <DecideButtons size="sm" coll="imprests" id={r.id} label={r.no} />
                   )}
                 </div>
               </div>

@@ -17,6 +17,7 @@ import { ContractModule } from './contract/contract.module.js';
 import { CostingModule } from './costing/costing.module.js';
 import { AlertsModule } from './alerts/alerts.module.js';
 import { AppController } from './app.controller.js';
+import { V2Module } from './v2/v2.module.js';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { AppController } from './app.controller.js';
     ContractModule,
     CostingModule,
     AlertsModule,
+    V2Module,
   ],
   controllers: [AppController],
 })

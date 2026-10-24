@@ -1,7 +1,11 @@
+// costing and dates follow Indian business days, whatever the host's clock is set to
+process.env.TZ = process.env.BUSINESS_TZ || 'Asia/Kolkata';
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module.js';
 import { validateEnv } from './core/config/env.validation.js';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FieldMaskingInterceptor } from './core/interceptors/field-masking.interceptor.js';
@@ -17,9 +21,11 @@ async function bootstrap() {
   app.useLogger(logger);
 
   // 3. Middlewares
+  app.use(compression());
   app.use(cookieParser());
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    // comma-separated list, e.g. "https://wcm.vercel.app,http://localhost:5173"
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean),
     credentials: true,
   });
 

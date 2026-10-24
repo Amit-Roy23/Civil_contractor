@@ -1,3 +1,4 @@
+import { getDB } from '../data/store';
 /**
  * Report export helpers (TEC-07): real .xlsx files (minimal OOXML writer, no dependency)
  * and PDF via the browser's print-to-PDF with a clean print layout.
@@ -177,10 +178,12 @@ function slug(s: string) {
 
 /* ---------------- PDF (print) ---------------- */
 
-export const COMPANY_PRINT_HEADER = {
-  name: 'Arohon Infra Projects Pvt. Ltd.',
-  line: 'GSTIN 18AAKCA4821N1ZQ · Khanapara, Guwahati, Assam 781022',
-};
+/** letterhead from the company profile (Masters → Company) */
+function printHeader() {
+  const c = getDB().company;
+  const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
+  return { name: esc(c.name || ''), line: esc([c.gstin && `GSTIN ${c.gstin}`, c.address].filter(Boolean).join(' · ')) };
+}
 
 function printHtml(title: string, body: string) {
   const w = window.open('', '_blank', 'width=1000,height=800');
@@ -201,7 +204,7 @@ function printHtml(title: string, body: string) {
   .sig{border-top:1px solid #999;padding-top:4px;width:180px;text-align:center}
   @page{size:A4;margin:12mm}
 </style></head><body>
-<div class="hd"><div><div class="co">${COMPANY_PRINT_HEADER.name}</div><div class="sub">${COMPANY_PRINT_HEADER.line}</div></div>
+<div class="hd"><div><div class="co">${printHeader().name}</div><div class="sub">${printHeader().line}</div></div>
 <div class="sub">Printed ${new Date().toLocaleString('en-IN')}</div></div>
 ${body}
 <script>window.onload=()=>{setTimeout(()=>window.print(),150)}</script>

@@ -22,8 +22,8 @@ import type {
   Vehicle,
   VehicleDoc,
   Worker,
-} from './types';
-import { addDays } from '../lib/format';
+} from './types.js';
+import { addDays } from './format.js';
 
 /* ---------- deterministic RNG ---------- */
 export function makeRng(seed: number) {
