@@ -33,7 +33,7 @@ export default function Approvals() {
     if (!act) return;
     if (act.decision !== 'APPROVED' && !remark.trim()) return toast.error('Remark is required to reject or send back');
     for (const a of act.items) decide(a.collection, a.id, act.decision, remark.trim() || 'Approved', a.title);
-    toast.success(`${act.items.length} ${act.items.length === 1 ? 'entry' : 'entries'} ${act.decision === 'APPROVED' ? 'approved' : act.decision === 'REJECTED' ? 'rejected' : 'sent back'}`, act.decision === 'APPROVED' ? 'Now included in final cost (APR-03)' : 'The person who raised it has been notified');
+    toast.success(`${act.items.length} ${act.items.length === 1 ? 'entry' : 'entries'} ${act.decision === 'APPROVED' ? 'approved' : act.decision === 'REJECTED' ? 'rejected' : 'sent back'}`, act.decision === 'APPROVED' ? 'Now included in final cost' : 'The person who raised it has been notified');
     setAct(null);
     setRemark('');
     setSel(new Set());
@@ -44,7 +44,6 @@ export default function Approvals() {
       <PageHeader
         title="Approvals"
         subtitle="Purchase orders, issues, expenses, fuel and back-dated entries above the set limits wait here. Unapproved entries show as pending and stay out of final cost."
-        tags={['APR-01', 'APR-02', 'APR-03', 'ROLE-04']}
         actions={<Segmented value={view} onChange={setView} options={[{ value: 'pending', label: `Pending (${items.length})` }, { value: 'history', label: 'History' }]} />}
       />
       {view === 'pending' ? (
@@ -84,7 +83,7 @@ export default function Approvals() {
                           <Badge tone="info">{a.module}</Badge>
                           {a.siteId && <Badge>{n.site(a.siteId)}</Badge>}
                           <span className={cn('inline-flex items-center gap-1 text-[11px]', old ? 'text-bad font-semibold' : 'text-muted')}>
-                            <Clock className="w-3 h-3" /> {relTime(a.createdAt)}{old ? ' · over 24 h (ALT-04)' : ''}
+                            <Clock className="w-3 h-3" /> {relTime(a.createdAt)}{old ? ' · over 24 h' : ''}
                           </span>
                         </div>
                         <button onClick={() => navigate(a.link)} className="text-left font-semibold mt-1.5 hover:underline">{a.title}</button>
@@ -139,7 +138,7 @@ export default function Approvals() {
           <Field label={act?.decision === 'APPROVED' ? 'Remark (optional)' : 'Remark'} required={act?.decision !== 'APPROVED'}>
             <Textarea value={remark} onChange={(e) => setRemark(e.target.value)} placeholder={act?.decision === 'SENT_BACK' ? 'What needs to be corrected?' : ''} />
           </Field>
-          <p className="text-[11px] text-muted">The person who raised it gets an in-app notification{db.settings.notify.whatsapp ? ' and WhatsApp' : ''}{db.settings.notify.email ? ' / email' : ''} (APR-02). Every decision is written to the audit log.</p>
+          <p className="text-[11px] text-muted">The person who raised it gets an in-app notification{db.settings.notify.whatsapp ? ' and WhatsApp' : ''}{db.settings.notify.email ? ' / email' : ''}. Every decision is written to the audit log.</p>
         </div>
       </Modal>
     </div>

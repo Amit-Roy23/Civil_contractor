@@ -4,18 +4,18 @@ import { navigate } from '../../lib/router';
 import { useSession } from '../../data/session';
 import type { ModuleKey } from '../../data/types';
 
-/** Daily entry launcher (TEC-02): the screens site, plant and fleet staff use every day. */
+/** Daily entry launcher: the screens site, plant and fleet staff use every day. */
 const ENTRIES: Array<{ label: string; sub: string; path: string; icon: any; module: ModuleKey; color: string }> = [
-  { label: 'Consumption', sub: 'MAT-04', path: '/inventory/transactions?new=CONSUMPTION', icon: ClipboardList, module: 'inventory', color: 'from-orange-500 to-amber-500' },
-  { label: 'Receive material', sub: 'MAT-01/02', path: '/inventory/transactions?new=RECEIVE', icon: PackageCheck, module: 'inventory', color: 'from-emerald-500 to-teal-500' },
-  { label: 'Transfer', sub: 'MAT-05', path: '/inventory/transactions?new=TRANSFER', icon: ArrowLeftRight, module: 'inventory', color: 'from-sky-500 to-blue-600' },
-  { label: 'Attendance', sub: 'LAB-01', path: '/labour/attendance?new=1', icon: Users, module: 'labour', color: 'from-violet-500 to-purple-600' },
-  { label: 'Expense', sub: 'EXP-02', path: '/expenses/entries?new=1', icon: Receipt, module: 'expenses', color: 'from-rose-500 to-pink-600' },
-  { label: 'Fuel issue', sub: 'FUEL-04', path: '/fleet/fuel?new=1', icon: Fuel, module: 'fleet', color: 'from-amber-500 to-yellow-500' },
-  { label: 'Logbook', sub: 'VEH-01', path: '/fleet/logbook?new=1', icon: Truck, module: 'fleet', color: 'from-slate-600 to-slate-800' },
-  { label: 'Production', sub: 'PLT-05', path: '/plant/production?new=1', icon: Factory, module: 'plant', color: 'from-cyan-500 to-sky-600' },
-  { label: 'Dispatch', sub: 'PLT-10', path: '/plant/dispatch?new=1', icon: HardHat, module: 'plant', color: 'from-lime-500 to-green-600' },
-  { label: 'Measurement', sub: 'BOQ-02', path: '/contract/measurements?new=1', icon: Ruler, module: 'contract', color: 'from-indigo-500 to-blue-700' },
+  { label: 'Consumption', sub: 'Used at site', path: '/inventory/transactions?new=CONSUMPTION', icon: ClipboardList, module: 'inventory', color: 'from-orange-500 to-amber-500' },
+  { label: 'Receive material', sub: 'Challan / GRN', path: '/inventory/transactions?new=RECEIVE', icon: PackageCheck, module: 'inventory', color: 'from-emerald-500 to-teal-500' },
+  { label: 'Transfer', sub: 'Site to site', path: '/inventory/transactions?new=TRANSFER', icon: ArrowLeftRight, module: 'inventory', color: 'from-sky-500 to-blue-600' },
+  { label: 'Attendance', sub: 'Today’s muster', path: '/labour/attendance?new=1', icon: Users, module: 'labour', color: 'from-violet-500 to-purple-600' },
+  { label: 'Expense', sub: 'With bill photo', path: '/expenses/entries?new=1', icon: Receipt, module: 'expenses', color: 'from-rose-500 to-pink-600' },
+  { label: 'Fuel issue', sub: 'Diesel to a machine', path: '/fleet/fuel?new=1', icon: Fuel, module: 'fleet', color: 'from-amber-500 to-yellow-500' },
+  { label: 'Logbook', sub: 'Km, hours, trips', path: '/fleet/logbook?new=1', icon: Truck, module: 'fleet', color: 'from-slate-600 to-slate-800' },
+  { label: 'Production', sub: 'Mix made today', path: '/plant/production?new=1', icon: Factory, module: 'plant', color: 'from-cyan-500 to-sky-600' },
+  { label: 'Dispatch', sub: 'Load to a work', path: '/plant/dispatch?new=1', icon: HardHat, module: 'plant', color: 'from-lime-500 to-green-600' },
+  { label: 'Measurement', sub: 'Work done', path: '/contract/measurements?new=1', icon: Ruler, module: 'contract', color: 'from-indigo-500 to-blue-700' },
 ];
 
 export function QuickEntry({ open, onClose }: { open: boolean; onClose: () => void }) {

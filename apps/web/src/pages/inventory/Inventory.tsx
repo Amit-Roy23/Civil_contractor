@@ -43,7 +43,7 @@ export default function Inventory() {
   const { tab, tabsEl } = useModuleTab('inventory');
   return (
     <div>
-      <PageHeader title="Site inventory" subtitle="Live stock at every site, store and plant — in quantity and value." tags={['MAT-01…18', 'STR-01']} />
+      <PageHeader title="Site inventory" subtitle="Live stock at every site, store and plant — in quantity and value." />
       {tabsEl}
       {tab === 'stock' && <StockTab />}
       {tab === 'transactions' && <TransactionsTab />}
@@ -268,12 +268,12 @@ function TxnForm({ kind, onClose }: { kind: FormKind; onClose: () => void }) {
   const sysQty = adjMat ? availability(db, from, adjMat, d).onDate : 0;
 
   const titles: Record<FormKind, [string, string]> = {
-    CONSUMPTION: ['Material consumption', 'MAT-04 · tag to BOQ item / work done so cost per item and theoretical-vs-actual work'],
-    TRANSFER: ['Transfer to another site', 'MAT-05 · stock leaves your site only when the receiving site confirms'],
-    RETURN: ['Return to central store', 'MAT-06 · unused material back to the godown'],
-    WASTAGE: ['Wastage / damage / theft', 'MAT-07 · needs approval before it reduces stock'],
-    ADJUSTMENT: ['Stock adjustment', 'MAT-08 · physical verification — system vs physical'],
-    OPENING: ['Opening stock', 'MAT-09 · go-live / new financial year'],
+    CONSUMPTION: ['Material consumption', 'tag to BOQ item / work done so cost per item and theoretical-vs-actual work'],
+    TRANSFER: ['Transfer to another site', 'stock leaves your site only when the receiving site confirms'],
+    RETURN: ['Return to central store', 'unused material back to the godown'],
+    WASTAGE: ['Wastage / damage / theft', 'needs approval before it reduces stock'],
+    ADJUSTMENT: ['Stock adjustment', 'physical verification — system vs physical'],
+    OPENING: ['Opening stock', 'go-live / new financial year'],
     RECEIVE: ['Receive', ''],
   };
 
@@ -290,7 +290,7 @@ function TxnForm({ kind, onClose }: { kind: FormKind; onClose: () => void }) {
     } else {
       const valid = lines.filter((l) => l.materialId && Number(l.qty) > 0);
       if (!valid.length) return toast.error('Add at least one material with quantity');
-      if (short && !(s.isAdmin && db.settings.allowNegativeOverride)) return toast.error('Not enough stock', 'Stock can never go negative (MAT-10).');
+      if (short && !(s.isAdmin && db.settings.allowNegativeOverride)) return toast.error('Not enough stock', 'Stock can never go negative.');
       txLines = valid.map((l) => ({ materialId: l.materialId, qty: toBase(db, l), rate: kind === 'OPENING' ? Number(l.rate) || lk.material[l.materialId]!.stdRate : 0, enteredQty: Number(l.qty), enteredUnit: l.unit }));
     }
     if ((kind === 'TRANSFER' || kind === 'RETURN') && !to) return toast.error('Choose destination');
@@ -343,7 +343,7 @@ function TxnForm({ kind, onClose }: { kind: FormKind; onClose: () => void }) {
     >
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Date" required hint={`Back-dating allowed up to ${db.settings.backdateDays} days (MAT-14)`}>
+          <Field label="Date" required hint={`Back-dating allowed up to ${db.settings.backdateDays} days`}>
             <Input type="date" value={d} max={today()} onChange={(e) => setD(e.target.value)} />
           </Field>
           <Field label={kind === 'TRANSFER' || kind === 'RETURN' ? 'From store' : 'Store'} required>
@@ -396,7 +396,7 @@ function TxnForm({ kind, onClose }: { kind: FormKind; onClose: () => void }) {
             <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={kind === 'WASTAGE' ? 'e.g. 20 bags set due to rain' : 'e.g. Monthly physical count'} />
           </Field>
         )}
-        <AttachField count={photos} onChange={setPhotos} label="Photos / challan (MAT-13)" />
+        <AttachField count={photos} onChange={setPhotos} label="Photos / challan" />
         {kind === 'WASTAGE' && <Callout tone="warn">Wastage goes to the owner for approval and reduces stock only after it is approved.</Callout>}
       </div>
     </Drawer>
@@ -415,7 +415,7 @@ function TxnView({ txn, onClose }: { txn: StockTxn; onClose: () => void }) {
   const canApprove = t.status === 'PENDING' && s.can('approvals', 'approve');
   const isPosted = t.status === 'POSTED' || t.status === 'APPROVED';
   const doCancel = () => {
-    if (!reason) return toast.error('Reason is required (SEC-03)');
+    if (!reason) return toast.error('Reason is required');
     if (t.type !== 'CONSUMPTION' && t.type !== 'WASTAGE' && t.type !== 'ADJUSTMENT' && t.toStoreId) {
       // reversing a receipt must not push the receiver negative
       const short = t.lines.some((l) => availability(db, t.toStoreId!, l.materialId, t.date).minAfter < l.qty - 1e-6);
@@ -510,7 +510,7 @@ function TxnView({ txn, onClose }: { txn: StockTxn; onClose: () => void }) {
           </>
         }
       >
-        <p className="text-sm text-fg-2 mb-3">Posted entries are never deleted (SEC-03). Cancelling reverses the stock effect and is written to the audit log.</p>
+        <p className="text-sm text-fg-2 mb-3">Posted entries are never deleted. Cancelling reverses the stock effect and is written to the audit log.</p>
         <Field label="Reason" required>
           <Textarea value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
@@ -573,8 +573,8 @@ function TransitTab() {
       const q = recvQty === '' ? d.qty : Number(recvQty);
       const diffPct = ((d.qty - q) / d.qty) * 100;
       update('dispatches', d.id, { status: 'RECEIVED', receivedQty: q, receivedAt: new Date().toISOString() }, `${d.no} received at site`, 'Dispatch');
-      if (Math.abs(diffPct) > db.settings.tolerance.dispatch) toast.warn('Quantity difference flagged', `${diffPct.toFixed(1)}% short vs dispatch slip (PLT-11)`);
-      else toast.success('Receipt confirmed (MAT-03)');
+      if (Math.abs(diffPct) > db.settings.tolerance.dispatch) toast.warn('Quantity difference flagged', `${diffPct.toFixed(1)}% short vs dispatch slip`);
+      else toast.success('Receipt confirmed');
     } else {
       update('stockTxns', confirm.id, { status: 'POSTED', receivedAt: today(), receivedBy: s.user.name }, `${confirm.no} received`, 'Stock voucher');
       toast.success('Receipt confirmed', 'Stock moved to your store');
@@ -638,7 +638,7 @@ function VarianceTab() {
   return (
     <div className="space-y-4">
       <Callout>
-        For every BOQ item with a recipe, the system works out the material that <b>should</b> have been used for the measured work, and compares it with material actually consumed against that item (MAT-16/17). Rows over tolerance raise an alert (MAT-18).
+        For every BOQ item with a recipe, the system works out the material that <b>should</b> have been used for the measured work, and compares it with material actually consumed against that item. Rows over tolerance raise an alert.
       </Callout>
       {chart.length > 0 && (
         <Card>
@@ -679,7 +679,7 @@ function ToolsTab() {
   const rows = useMemo(() => toolsBalance(db).filter((r) => s.seesSite(r.siteId)), [db, s]);
   return (
     <div className="space-y-4">
-      <Callout icon={<Hammer className="w-4 h-4" />}>Returnable items — shuttering plates, props, scaffolding — are tracked separately: issued to site, returned, lost or damaged, with the balance at each site (MAT-15).</Callout>
+      <Callout icon={<Hammer className="w-4 h-4" />}>Returnable items — shuttering plates, props, scaffolding — are tracked separately: issued to site, returned, lost or damaged, with the balance at each site.</Callout>
       <DataTable
         title="Tools & tackles balance"
         rows={rows}

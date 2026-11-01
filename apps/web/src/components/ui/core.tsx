@@ -23,6 +23,8 @@ export const Button = React.forwardRef<
       ref={ref}
       disabled={disabled || loading}
       className={cn('inline-flex items-center whitespace-nowrap font-medium transition-all duration-150 active:scale-[0.97] disabled:opacity-50 disabled:active:scale-100 select-none', v[variant], s, className)}
+      // icon-only buttons show their label as a tooltip
+      title={rest.title ?? (size === 'icon' ? rest['aria-label'] : undefined)}
       {...rest}
     >
       {loading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : icon}

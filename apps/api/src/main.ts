@@ -1,7 +1,12 @@
+// costing and dates follow Indian business days, whatever the host's clock is set to
+process.env.TZ = process.env.BUSINESS_TZ || 'Asia/Kolkata';
+
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { validateEnv } from './core/config/env.validation.js';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FieldMaskingInterceptor } from './core/interceptors/field-masking.interceptor.js';
@@ -10,16 +15,20 @@ async function bootstrap() {
   // 1. Fail-fast environment validation
   validateEnv(process.env);
 
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  // Excel imports, logos and signature images are larger than the 100 KB default
+  app.useBodyParser('json', { limit: process.env.BODY_LIMIT || '10mb' });
 
   // 2. Structured logging
   const logger = app.get(Logger);
   app.useLogger(logger);
 
   // 3. Middlewares
+  app.use(compression());
   app.use(cookieParser());
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    // comma-separated list, e.g. "https://wcm.vercel.app,http://localhost:5173"
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean),
     credentials: true,
   });
 

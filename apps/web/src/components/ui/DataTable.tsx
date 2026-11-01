@@ -13,7 +13,7 @@ export interface Column<T> {
   /** raw value used for sort, search & export */
   value?: (row: T) => string | number | null | undefined;
   align?: 'left' | 'right' | 'center';
-  /** amount / rate column hidden from roles without rate visibility (ROLE-03) */
+  /** amount / rate column hidden from roles without rate visibility */
   rate?: boolean;
   hideMobile?: boolean;
   primary?: boolean;
@@ -124,7 +124,7 @@ export function DataTable<T>({
           <div className="flex flex-wrap items-center gap-2 md:ml-auto">
             {toolbar}
             {hiddenRates && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-muted px-2" title="Rates & amounts are hidden for your role (ROLE-03)">
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted px-2" title="Rates & amounts are hidden for your role">
                 <EyeOff className="w-3.5 h-3.5" /> Rates hidden
               </span>
             )}

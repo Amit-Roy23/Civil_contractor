@@ -19,7 +19,7 @@ export default function Contract() {
   const { tab, tabsEl } = useModuleTab('contract');
   return (
     <div>
-      <PageHeader title="Contracts, billing & site costing" subtitle="What was billed against what was spent — profit or loss per site, every day." tags={['BOQ-01…03', 'BIL-01…06', 'CST-01…04']} />
+      <PageHeader title="Contracts, billing & site costing" subtitle="What was billed against what was spent — profit or loss per site, every day." />
       {tabsEl}
       {tab === 'costing' && <CostingTab />}
       {tab === 'boq' && <BoqTab />}
@@ -126,7 +126,7 @@ function SiteSheet({ siteId, picker }: { siteId: string; picker: React.ReactNode
         <Stat label="Cost to date" value={cs.cost} format={inrCompact} tone="warn" icon={<Wallet className="w-[18px] h-[18px]" />} />
         <Stat label="Profit / loss" value={cs.profit} format={inrCompact} tone={cs.profit >= 0 ? 'good' : 'bad'} icon={cs.profit >= 0 ? <TrendingUp className="w-[18px] h-[18px]" /> : <TrendingDown className="w-[18px] h-[18px]" />} sub={`${cs.margin.toFixed(1)}% on work done`} className="col-span-2 xl:col-span-1" />
       </div>
-      {cs.profit < 0 && <Callout tone="bad">Cost has crossed the value of work done at this site (ALT-06). Check material over-use and labour productivity.</Callout>}
+      {cs.profit < 0 && <Callout tone="bad">Cost has crossed the value of work done at this site. Check material over-use and labour productivity.</Callout>}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4">
         <Card className="xl:col-span-3">
           <CardHeader title="Site cost sheet (CST-01)" subtitle={`Includes cost before go-live (opening balances as of ${date(site.openingAsOf)})`} />
@@ -136,7 +136,7 @@ function SiteSheet({ siteId, picker }: { siteId: string; picker: React.ReactNode
                 <div key={h} className="flex items-center justify-between px-3 py-2.5">
                   <div>
                     <div className="text-sm font-medium">{COST_HEAD_LABEL[h]}</div>
-                    <div className="text-[11px] text-muted">{({ MATERIAL: 'Site consumption (MAT-04), plant receipts (MAT-03 / PLT-15)', LABOUR: 'Attendance & wages (LAB-06), labour contractor bills', SUBCONTRACT: 'Sub-contractor bills (LAB-11)', VEHICLE: 'Fuel (FUEL-09), hire bills (HIRE-02), internal rate (VEH-05), maintenance', MISC: 'Expenses (EXP-02)', OVERHEAD: 'Allocation (EXP-05)' } as Record<CostHead, string>)[h]}</div>
+                    <div className="text-[11px] text-muted">{({ MATERIAL: 'Site consumption, plant receipts', LABOUR: 'Attendance & wages, labour contractor bills', SUBCONTRACT: 'Sub-contractor bills', VEHICLE: 'Fuel, hire bills (HIRE-02), internal rate, maintenance', MISC: 'Expenses', OVERHEAD: 'Allocation' } as Record<CostHead, string>)[h]}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-semibold num">{inr(cs.heads[h])}</div>
@@ -246,7 +246,7 @@ function ExtraItemForm({ siteId, onClose }: { siteId: string; onClose: () => voi
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Extra / deviation item" subtitle="BOQ-01 · with client approval reference" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Add</Button></>}>
+    <Drawer open onClose={onClose} title="Extra / deviation item" subtitle="With the client approval reference" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Add</Button></>}>
       <div className="grid grid-cols-2 gap-4">
         <Field label="Item no."><Input value={itemNo} onChange={(e) => setItemNo(e.target.value)} /></Field>
         <Field label="Unit"><Select value={unit} onChange={setUnit} options={['CUM', 'SQM', 'MT', 'RMT', 'NOS', 'KG'].map((x) => ({ value: x, label: x }))} /></Field>
@@ -317,7 +317,7 @@ function MeasurementForm({ siteId, onClose }: { siteId: string; onClose: () => v
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Measurement entry" subtitle="BOQ-02 · BOQ item, location / chainage, length × breadth × depth × nos" footer={<><span className="mr-auto text-sm">Qty <b>{qty(q, b?.unit)}</b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
+    <Drawer open onClose={onClose} title="Measurement entry" subtitle="BOQ item, location / chainage, length × breadth × depth × nos" footer={<><span className="mr-auto text-sm">Qty <b>{qty(q, b?.unit)}</b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
       <div className="space-y-4">
         <Field label="BOQ item" required><Combo value={item} onChange={setItem} options={db.boq.filter((x) => x.siteId === siteId).map((x) => ({ value: x.id, label: `${x.itemNo} ${x.description}`, hint: `${x.unit} · BOQ ${num(x.qty)}` }))} /></Field>
         <div className="grid grid-cols-2 gap-4">
@@ -346,7 +346,7 @@ function printTaxInvoice(db: ReturnType<typeof useDB>, b: RaBill) {
     table: { title: 'Abstract', headers: ['Item', 'Description', 'Unit', 'Up-to-date qty', 'Previous qty', 'This bill qty', 'Rate', 'Amount'], rows: b.lines.filter((l) => l.thisQty > 0).map((l) => [lk.boq[l.boqItemId]?.itemNo, lk.boq[l.boqItemId]?.description, lk.boq[l.boqItemId]?.unit, l.uptoQty, l.prevQty, l.thisQty, l.rate, Math.round(l.thisQty * l.rate)]), numeric: [3, 4, 5, 6, 7] },
     summary: [
       ['Gross value of work', inr(c.gross - (b.escalation || 0))],
-      ...(b.escalation ? ([['Price escalation (BIL-05)', inr(b.escalation)]] as Array<[string, string]>) : []),
+      ...(b.escalation ? ([['Price escalation', inr(b.escalation)]] as Array<[string, string]>) : []),
       [`GST @ ${b.gstPct}%`, inr(c.gst)],
       ['Less: security deposit', inr(-b.deductions.securityDeposit)],
       ['Less: retention', inr(-b.deductions.retention)],
@@ -433,7 +433,7 @@ function RaView({ bill, onClose }: { bill: RaBill; onClose: () => void }) {
           <Card className="p-3"><div className="text-[11px] text-muted">Net payable</div><div className="font-bold"><Money v={c.net} compact /></div></Card>
           <Card className="p-3"><div className="text-[11px] text-muted">Outstanding</div><div className={cn('font-bold', c.outstanding > 0 && 'text-warn')}><Money v={c.outstanding} compact /></div></Card>
         </div>
-        <Section title="Abstract (BIL-01)">
+        <Section title="Abstract">
           <div className="rounded-xl border border-line overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead className="bg-surface-2 text-[10px] uppercase text-muted"><tr><th className="text-left px-3 py-2">Item</th><th className="text-right px-2">Up-to-date</th><th className="text-right px-2">Previous</th><th className="text-right px-2">This bill</th><th className="text-right px-3">Amount</th></tr></thead>
@@ -451,10 +451,10 @@ function RaView({ bill, onClose }: { bill: RaBill; onClose: () => void }) {
             </table>
           </div>
         </Section>
-        <Section title="Deductions (BIL-02)">
+        <Section title="Deductions">
           <KV cols={3} items={[['Security deposit', <Money key="1" v={ded.securityDeposit} />], ['Retention', <Money key="2" v={ded.retention} />], ['TDS on works contract', <Money key="3" v={ded.tds} />], ['Labour cess', <Money key="4" v={ded.cess} />], ['GST TDS', <Money key="5" v={ded.gstTds} />], ['Royalty', <Money key="6" v={ded.royalty} />], ['Mobilisation advance recovery', <Money key="7" v={ded.advanceRecovery} />], ['Material by client', <Money key="8" v={ded.materialRecovery} />], ['Penalties', <Money key="9" v={ded.penalty} />]]} />
         </Section>
-        <Section title="Receipts (BIL-04)">
+        <Section title="Receipts">
           {b.receipts.length ? (
             <div className="rounded-xl border border-line divide-y divide-line">
               {b.receipts.map((r, i) => (
@@ -518,7 +518,7 @@ function RaForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Prepare RA bill" subtitle="BIL-01 · from measurements: up-to-date qty, previous billed qty, this-bill qty" width="max-w-3xl" footer={<><span className="mr-auto text-sm">Net <b>{inr(c.net)}</b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Submit bill</Button></>}>
+    <Drawer open onClose={onClose} title="Prepare RA bill" subtitle="from measurements: up-to-date qty, previous billed qty, this-bill qty" width="max-w-3xl" footer={<><span className="mr-auto text-sm">Net <b>{inr(c.net)}</b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Submit bill</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Site"><Select value={site} onChange={setSite} options={sites.map((x) => ({ value: x.id, label: x.short }))} /></Field>
@@ -535,18 +535,18 @@ function RaForm({ onClose }: { onClose: () => void }) {
           </table>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Field label="Escalation (BIL-05)"><NumberInput value={escalation} onChange={setEscalation} prefix="₹" /></Field>
+          <Field label="Escalation"><NumberInput value={escalation} onChange={setEscalation} prefix="₹" /></Field>
           <Field label="Advance recovery"><NumberInput value={adv} onChange={setAdv} prefix="₹" /></Field>
           <Field label="Material by client"><NumberInput value={matRec} onChange={setMatRec} prefix="₹" /></Field>
           <Field label="Penalty"><NumberInput value={pen} onChange={setPen} prefix="₹" /></Field>
         </div>
-        <KV cols={3} items={[['Gross', inr(c.gross)], [`GST ${draft.gstPct}% (BIL-03)`, inr(c.gst)], ['Security deposit 2.5%', inr(ded.securityDeposit)], [`Retention ${st?.retentionPct}%`, inr(ded.retention)], [`TDS ${client?.tdsPct}%`, inr(ded.tds)], [`Labour cess ${client?.cessPct}%`, inr(ded.cess)], ['GST TDS 2%', inr(ded.gstTds)], ['Royalty', inr(ded.royalty)], ['Net payable', <b key="n">{inr(c.net)}</b>]]} />
+        <KV cols={3} items={[['Gross', inr(c.gross)], [`GST ${draft.gstPct}%`, inr(c.gst)], ['Security deposit 2.5%', inr(ded.securityDeposit)], [`Retention ${st?.retentionPct}%`, inr(ded.retention)], [`TDS ${client?.tdsPct}%`, inr(ded.tds)], [`Labour cess ${client?.cessPct}%`, inr(ded.cess)], ['GST TDS 2%', inr(ded.gstTds)], ['Royalty', inr(ded.royalty)], ['Net payable', <b key="n">{inr(c.net)}</b>]]} />
       </div>
     </Drawer>
   );
 }
 
-/* ================= Client ledger & receivables (BIL-06) ================= */
+/* ================= Client ledger & receivables ================= */
 function ReceivablesTab() {
   const db = useDB();
   const s = useSession();
@@ -569,12 +569,12 @@ function ReceivablesTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
           <CardHeader title="Receivables by client" subtitle="Outstanding net of deductions" />
-          <div className="px-4 pb-4"><Donut segments={byClient.map((c) => ({ label: n.lk.client[c.cid]?.code || '', value: c.total }))} format={inrCompact} center={<><div className="text-[11px] text-muted">Outstanding</div><div className="font-bold">{inrCompact(sum(byClient, (c) => c.total))}</div></>} /></div>
+          <div className="px-4 pb-4"><Donut segments={byClient.map((c) => ({ label: n.client(c.cid), value: c.total }))} format={inrCompact} center={<><div className="text-[11px] text-muted">Outstanding</div><div className="font-bold">{inrCompact(sum(byClient, (c) => c.total))}</div></>} /></div>
         </Card>
         <Card>
           <CardHeader title="Ageing" />
           <div className="px-4 pb-4">
-            <ColumnChart stacked data={byClient.map((c) => ({ label: n.lk.client[c.cid]?.code || '', values: { b0: c.b0, b30: c.b30, b60: c.b60, b90: c.b90 } }))} series={[{ key: 'b0', label: '0–30' }, { key: 'b30', label: '31–60' }, { key: 'b60', label: '61–90' }, { key: 'b90', label: '90+' }]} format={inrCompact} height={200} />
+            <ColumnChart stacked data={byClient.map((c) => ({ label: n.client(c.cid), values: { b0: c.b0, b30: c.b30, b60: c.b60, b90: c.b90 } }))} series={[{ key: 'b0', label: '0–30' }, { key: 'b30', label: '31–60' }, { key: 'b60', label: '61–90' }, { key: 'b90', label: '90+' }]} format={inrCompact} height={200} />
           </div>
         </Card>
       </div>
@@ -584,7 +584,7 @@ function ReceivablesTab() {
         rowKey={(r) => r.billNo}
         columns={[
           { key: 'bill', header: 'Bill', primary: true, value: (r) => r.billNo, cell: (r) => <span className="font-mono text-[13px]">{r.billNo}</span> },
-          { key: 'client', header: 'Client', value: (r) => n.lk.client[r.clientId]?.code },
+          { key: 'client', header: 'Client', value: (r) => n.client(r.clientId) },
           { key: 'date', header: 'Bill date', value: (r) => r.date, cell: (r) => date(r.date) },
           { key: 'age', header: 'Age', align: 'right', value: (r) => r.age, cell: (r) => <Badge tone={r.age > 90 ? 'bad' : r.age > 45 ? 'warn' : 'neutral'}>{r.age} days</Badge> },
           { key: 'status', header: 'Status', value: (r) => r.status, cell: (r) => <StatusBadge status={r.status} /> },
@@ -596,7 +596,7 @@ function ReceivablesTab() {
         title={`Client ledger — ${n.lk.client[client]?.name}`}
         rows={ledger}
         rowKey={(r, i) => `${r.ref}-${i}`}
-        toolbar={<Select value={client} onChange={setClient} options={db.clients.map((c) => ({ value: c.id, label: c.code }))} className="w-40" />}
+        toolbar={<Select value={client} onChange={setClient} options={db.clients.map((c) => ({ value: c.id, label: c.name }))} className="w-40" />}
         columns={[
           { key: 'date', header: 'Date', value: (r) => r.date, cell: (r) => date(r.date) },
           { key: 'type', header: 'Type', value: (r) => r.type, cell: (r) => <Badge tone={r.type === 'Receipt' ? 'good' : 'info'}>{r.type}</Badge> },
@@ -627,7 +627,7 @@ function BudgetTab() {
         <div className="flex-1" />
         {s.isAdmin && <Button onClick={() => (setDraft({ ...st.budget }), setEdit(true))}>Edit budget</Button>}
       </div>
-      <Callout>Physical progress is <b>{progress.toFixed(1)}%</b>. A cost head that has used much more of its budget than the progress is running over (ALT-06).</Callout>
+      <Callout>Physical progress is <b>{progress.toFixed(1)}%</b>. A cost head that has used much more of its budget than the progress is running over.</Callout>
       <Card>
         <CardHeader title="Budget vs actual by cost head" />
         <div className="px-4 pb-4">
@@ -679,7 +679,7 @@ function BoqCostTab() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">{picker}</div>
-      <Callout>Direct cost per BOQ item where consumption (MAT-04) or sub-contract bills were tagged to the item, divided by the quantity executed since go-live — compared with the BOQ rate (CST-04).</Callout>
+      <Callout>Direct cost per BOQ item where consumption or sub-contract bills were tagged to the item, divided by the quantity executed since go-live — compared with the BOQ rate (CST-04).</Callout>
       <DataTable
         title="Cost per BOQ item"
         rows={rows}

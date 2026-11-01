@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
-import { CircleCheck, FileUp, Pencil, Plus, Power, Trash2 } from 'lucide-react';
-import { useDB, insert, update, updateCompany } from '../../data/store';
+import { CircleCheck, FileSpreadsheet, FileUp, Pencil, Plus, Power, Trash2 } from 'lucide-react';
+import { useDB, insert, update } from '../../data/store';
 import { useSession } from '../../data/session';
 import { lookup } from '../../data/selectors';
 import type { CollectionKey, DB, VehicleDoc } from '../../data/types';
-import { Badge, Button, Callout, Card, CardHeader, Drawer, PageHeader, Section, toast } from '../../components/ui/core';
+import { Badge, Button, Callout, Card, Drawer, PageHeader, Section, toast } from '../../components/ui/core';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { Combo, Field, Input, NumberInput, Select, Textarea, Toggle } from '../../components/ui/fields';
-import { date, inr, inrCompact, qty } from '../../lib/format';
-import { csvObjects, pickFile } from '../../lib/csv';
+import { inr, inrCompact, qty } from '../../lib/format';
 import { cn } from '../../lib/utils';
 import { materialOptions, useModuleTab, useQueryParam } from '../shared';
+import { templateById } from '@civil/domain/imports';
+import { ClientForm, FirmsTab, WorksTab } from './WorkForm';
+import { ImportDialog, ImportExportTab, exportTemplate } from './ImportExport';
 
 type FType = 'text' | 'number' | 'money' | 'date' | 'select' | 'textarea' | 'toggle' | 'pct';
 interface FieldDef {
@@ -34,35 +36,10 @@ interface MasterDef {
 }
 
 const opt = (arr: string[]) => () => arr.map((x) => ({ value: x, label: x }));
-const sitesOpt = (db: DB) => db.sites.map((s) => ({ value: s.id, label: s.short }));
-const usersOpt = (db: DB) => db.users.map((u) => ({ value: u.id, label: u.name }));
+const sitesOpt = (db: DB) => db.sites.filter((s) => !(s as any).outOfScope && s.status !== 'COMPLETED').map((s) => ({ value: s.id, label: s.short }));
 const activeCell = { key: 'active', header: 'Status', value: (r: any) => (r.active === false ? 'Inactive' : 'Active'), cell: (r: any) => (r.active === false ? <Badge>Inactive</Badge> : <Badge tone="good" dot>Active</Badge>) };
 
 const MASTERS: Record<string, MasterDef> = {
-  sites: {
-    coll: 'sites', title: 'Sites / projects', req: 'MST-02',
-    fields: [
-      { key: 'code', label: 'Site code', required: true }, { key: 'short', label: 'Short name', required: true }, { key: 'name', label: 'Full name', required: true, span: 2 },
-      { key: 'clientId', label: 'Client / department', type: 'select', options: (db) => db.clients.map((c) => ({ value: c.id, label: c.name })), required: true },
-      { key: 'workType', label: 'Type of work', type: 'select', options: opt(['ROAD', 'BRIDGE', 'BUILDING', 'IRRIGATION']) },
-      { key: 'workOrderNo', label: 'Work order no.' }, { key: 'workOrderDate', label: 'Work order date', type: 'date' },
-      { key: 'contractValue', label: 'Contract value', type: 'money', required: true }, { key: 'location', label: 'Location' }, { key: 'gps', label: 'GPS (lat, long)' },
-      { key: 'startDate', label: 'Start date', type: 'date' }, { key: 'scheduledCompletion', label: 'Scheduled completion', type: 'date' }, { key: 'actualCompletion', label: 'Actual completion', type: 'date' },
-      { key: 'engineerId', label: 'Site engineer', type: 'select', options: (db) => db.users.filter((u) => u.roleId === 'engineer').map((u) => ({ value: u.id, label: u.name })) },
-      { key: 'status', label: 'Status', type: 'select', options: () => [{ value: 'ACTIVE', label: 'Active' }, { value: 'ON_HOLD', label: 'On hold' }, { value: 'COMPLETED', label: 'Completed' }] },
-      { key: 'securityDeposit', label: 'Security deposit', type: 'money' }, { key: 'retentionPct', label: 'Retention %', type: 'pct' }, { key: 'gstPct', label: 'GST % on works contract', type: 'pct', hint: 'BIL-03 — set per site' },
-    ],
-    defaults: { status: 'ACTIVE', retentionPct: 5, gstPct: 18, workType: 'ROAD', budget: { MATERIAL: 0, LABOUR: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEAD: 0 }, openingCost: { MATERIAL: 0, LABOUR: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEAD: 0 }, openingAsOf: '' },
-    cols: (db) => [
-      { key: 'code', header: 'Code', value: (r) => r.code, cell: (r) => <span className="font-mono text-xs">{r.code}</span> },
-      { key: 'name', header: 'Site', primary: true, value: (r) => r.name, cell: (r) => <div><div className="font-medium">{r.short}</div><div className="text-[11px] text-muted">{r.name}</div></div> },
-      { key: 'client', header: 'Client', value: (r) => lookup(db).client[r.clientId]?.code },
-      { key: 'cv', header: 'Contract value', align: 'right', rate: true, value: (r) => r.contractValue, cell: (r) => inrCompact(r.contractValue) },
-      { key: 'eng', header: 'Engineer', value: (r) => lookup(db).user[r.engineerId]?.name, hideMobile: true },
-      { key: 'dates', header: 'Schedule', value: (r) => r.scheduledCompletion, cell: (r) => `${date(r.startDate)} → ${date(r.scheduledCompletion)}`, hideMobile: true },
-      { key: 'status', header: 'Status', value: (r) => r.status, cell: (r) => <Badge tone={r.status === 'ACTIVE' ? 'good' : 'warn'} dot>{r.status === 'ACTIVE' ? 'Active' : r.status === 'ON_HOLD' ? 'On hold' : 'Completed'}</Badge> },
-    ],
-  },
   materials: {
     coll: 'materials', title: 'Materials', req: 'MST-05',
     fields: [
@@ -71,9 +48,9 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'kind', label: 'Raw / plant output', type: 'select', options: () => [{ value: 'RAW', label: 'Raw material' }, { value: 'OUTPUT', label: 'Plant output' }, { value: 'BOTH', label: 'Both' }] },
       { key: 'unit', label: 'Unit', type: 'select', options: (db) => db.units.filter((u) => !u.base).map((u) => ({ value: u.code, label: `${u.code} — ${u.name}` })), required: true },
       { key: 'altUnit', label: 'Alternate unit', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.units.map((u) => ({ value: u.code, label: u.code }))] },
-      { key: 'altFactor', label: '1 alt unit = ? unit', type: 'number', hint: 'e.g. 1 BAG = 0.05 MT (MAT-12)' }, { key: 'hsn', label: 'HSN' }, { key: 'gstPct', label: 'GST %', type: 'pct' },
+      { key: 'altFactor', label: '1 alt unit = ? unit', type: 'number', hint: 'e.g. 1 BAG = 0.05 MT' }, { key: 'hsn', label: 'HSN' }, { key: 'gstPct', label: 'GST %', type: 'pct' },
       { key: 'stdRate', label: 'Standard rate', type: 'money' }, { key: 'minStock', label: 'Minimum stock', type: 'number' }, { key: 'reorderQty', label: 'Reorder quantity', type: 'number' },
-      { key: 'tolerancePct', label: 'Consumption tolerance %', type: 'pct' }, { key: 'returnable', label: 'Returnable (tools & tackles)', type: 'toggle' }, { key: 'batchTracked', label: 'Batch / lot tracking', type: 'toggle', hint: 'STR-04' },
+      { key: 'tolerancePct', label: 'Consumption tolerance %', type: 'pct' }, { key: 'returnable', label: 'Returnable (tools & tackles)', type: 'toggle' }, { key: 'batchTracked', label: 'Batch / lot tracking', type: 'toggle' },
     ],
     defaults: { kind: 'RAW', gstPct: 18, minStock: 0, reorderQty: 0, stdRate: 0 },
     cols: () => [
@@ -144,7 +121,7 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'trade', label: 'Trade / skill', type: 'select', options: opt(['Mason', 'Helper', 'Carpenter', 'Bar Bender', 'Operator', 'Driver', 'Electrician', 'Supervisor']) },
       { key: 'ownership', label: 'Own / contractor', type: 'select', options: () => [{ value: 'OWN', label: 'Own worker' }, { value: 'CONTRACTOR', label: "Contractor's worker" }] },
       { key: 'wageRate', label: 'Wage per day', type: 'money', required: true }, { key: 'otRate', label: 'OT rate per hour', type: 'money' },
-      { key: 'siteId', label: 'Assigned site', type: 'select', options: sitesOpt, required: true }, { key: 'upi', label: 'Bank / UPI' }, { key: 'joiningDate', label: 'Joining date', type: 'date' },
+      { key: 'siteId', label: 'Assigned work', type: 'select', options: sitesOpt, required: true }, { key: 'upi', label: 'Bank / UPI' }, { key: 'joiningDate', label: 'Joining date', type: 'date' },
     ],
     defaults: { ownership: 'OWN', trade: 'Helper', wageRate: 520, otRate: 98 },
     cols: (db) => [
@@ -161,7 +138,7 @@ const MASTERS: Record<string, MasterDef> = {
     coll: 'vehicles', title: 'Vehicles & machines', req: 'MST-10',
     fields: [
       { key: 'code', label: 'Machine ID', required: true }, { key: 'regNo', label: 'Reg. no.', required: true },
-      { key: 'type', label: 'Type', type: 'select', options: opt(['Tipper', 'Transit Mixer', 'JCB', 'Excavator', 'Roller', 'Paver', 'Grader', 'Tanker', 'Car', 'Generator', 'Loader']) },
+      { key: 'type', label: 'Type', type: 'select', options: opt(['Tipper', 'Transit Mixer', 'JCB', 'Excavator', 'Roller', 'Paver', 'Grader', 'Tanker', 'Car', 'Generator', 'Loader', 'Paver Finisher', 'Compactor', 'Mobile Hot Mix', 'Bitumen Sprayer', 'Sweeper', 'Road Cleaner', 'Marking Machine', 'Concrete Mixer', 'Tractor', 'Other']) },
       { key: 'make', label: 'Make' }, { key: 'model', label: 'Model' }, { key: 'year', label: 'Year', type: 'number' },
       { key: 'ownership', label: 'Owned / hired', type: 'select', options: () => [{ value: 'OWNED', label: 'Owned' }, { value: 'HIRED', label: 'Hired' }] },
       { key: 'ownerName', label: 'Owner (if hired)' },
@@ -170,8 +147,8 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'fuelType', label: 'Fuel', type: 'select', options: opt(['HSD', 'Petrol']) }, { key: 'tankCapacity', label: 'Tank capacity (L)', type: 'number' },
       { key: 'meterType', label: 'Meter', type: 'select', options: () => [{ value: 'KM', label: 'Km' }, { value: 'HOURS', label: 'Hours' }, { value: 'BOTH', label: 'Both' }] },
       { key: 'stdKmpl', label: 'Standard KMPL', type: 'number' }, { key: 'stdLph', label: 'Standard LPH', type: 'number' },
-      { key: 'driver', label: 'Driver / operator' }, { key: 'siteId', label: 'Working at site', type: 'select', options: (db) => [{ value: '', label: '—' }, ...sitesOpt(db)] },
-      { key: 'serviceEvery', label: 'Service every (km / hrs)', type: 'number' }, { key: 'internalRate', label: 'Internal hire rate (VEH-05)', type: 'money' }, { key: 'emi', label: 'EMI / month', type: 'money' }, { key: 'driverSalary', label: 'Driver salary / month', type: 'money' },
+      { key: 'driver', label: 'Driver / operator' }, { key: 'siteId', label: 'Working at work', type: 'select', options: (db) => [{ value: '', label: '—' }, ...sitesOpt(db)] },
+      { key: 'serviceEvery', label: 'Service every (km / hrs)', type: 'number' }, { key: 'internalRate', label: 'Internal hire rate', type: 'money' }, { key: 'emi', label: 'EMI / month', type: 'money' }, { key: 'driverSalary', label: 'Driver salary / month', type: 'money' },
     ],
     defaults: { ownership: 'OWNED', fuelType: 'HSD', meterType: 'KM', status: 'WORKING', docs: [], lastServiceAt: 0, serviceEvery: 10000, internalRate: 40, emi: 0, driverSalary: 20000, tankCapacity: 200 },
     cols: (db) => [
@@ -186,26 +163,38 @@ const MASTERS: Record<string, MasterDef> = {
   },
   stores: {
     coll: 'stores', title: 'Stores / godowns', req: 'MST-03',
-    fields: [{ key: 'code', label: 'Code', required: true }, { key: 'name', label: 'Name', required: true }, { key: 'type', label: 'Type', type: 'select', options: () => [{ value: 'CENTRAL', label: 'Central store' }, { value: 'SITE', label: 'Site store' }, { value: 'PLANT', label: 'Plant yard' }] }, { key: 'siteId', label: 'Linked site', type: 'select', options: (db) => [{ value: '', label: '—' }, ...sitesOpt(db)] }, { key: 'plantId', label: 'Linked plant', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.plants.map((p) => ({ value: p.id, label: p.code }))] }],
-    defaults: { type: 'SITE' },
+    fields: [
+      { key: 'name', label: 'Name (as shown on screen)', required: true, span: 2 }, { key: 'code', label: 'Internal code', required: true },
+      { key: 'type', label: 'Type', type: 'select', options: () => [{ value: 'CENTRAL', label: 'Central godown' }, { value: 'PLANT', label: 'Plant yard' }, { value: 'SITE', label: 'Site store' }] },
+      { key: 'plantId', label: 'Linked plant', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.plants.map((p) => ({ value: p.id, label: p.name }))] },
+      { key: 'address', label: 'Location / address', span: 2 }, { key: 'holds', label: 'Holds', type: 'textarea', span: 2 },
+    ],
+    defaults: { type: 'CENTRAL' },
     cols: (db) => [
-      { key: 'code', header: 'Code', value: (r) => r.code, cell: (r) => <span className="font-mono text-xs">{r.code}</span> },
-      { key: 'name', header: 'Store', primary: true, value: (r) => r.name },
-      { key: 'type', header: 'Type', value: (r) => r.type, cell: (r) => <Badge tone={r.type === 'CENTRAL' ? 'brand' : r.type === 'PLANT' ? 'info' : 'neutral'}>{r.type.toLowerCase()}</Badge> },
-      { key: 'link', header: 'Linked to', value: (r) => lookup(db).site[r.siteId]?.short || lookup(db).plant[r.plantId]?.code || '—' },
+      { key: 'name', header: 'Store', primary: true, value: (r) => r.name, cell: (r) => <div><div className="font-medium">{r.name}</div>{r.address && <div className="text-[11px] text-muted">{r.address}</div>}</div> },
+      { key: 'type', header: 'Type', value: (r) => r.type, cell: (r) => <Badge tone={r.type === 'CENTRAL' ? 'brand' : r.type === 'PLANT' ? 'info' : 'neutral'}>{r.type === 'CENTRAL' ? 'Central godown' : r.type === 'PLANT' ? 'Plant yard' : 'Site store'}</Badge> },
+      { key: 'link', header: 'Linked to', value: (r) => lookup(db).site[r.siteId]?.short || lookup(db).plant[r.plantId]?.name || (r.type === 'CENTRAL' ? 'All works and the plant' : '—') },
       activeCell,
     ],
   },
   plants: {
     coll: 'plants', title: 'Plants', req: 'MST-04',
-    fields: [{ key: 'code', label: 'Code', required: true }, { key: 'name', label: 'Name', required: true }, { key: 'type', label: 'Type', type: 'select', options: () => [{ value: 'HOT_MIX', label: 'Hot mix' }, { value: 'BATCHING', label: 'Batching' }, { value: 'CRUSHER', label: 'Crusher' }, { value: 'WMM', label: 'WMM' }] }, { key: 'capacityPerHour', label: 'Capacity / hour', type: 'number' }, { key: 'capacityUnit', label: 'Capacity unit' }, { key: 'location', label: 'Location' }, { key: 'inChargeId', label: 'In-charge', type: 'select', options: usersOpt }, { key: 'storeId', label: 'Linked store', type: 'select', options: (db) => db.stores.filter((s) => s.type === 'PLANT').map((s) => ({ value: s.id, label: s.name })) }],
-    defaults: { type: 'HOT_MIX', costMode: 'ACTUAL', fixedRate: {} },
+    fields: [
+      { key: 'name', label: 'Plant name (on screen)', required: true, span: 2 }, { key: 'code', label: 'Internal code', required: true },
+      { key: 'type', label: 'Type', type: 'select', options: () => [{ value: 'HOT_MIX', label: 'Hot mix (asphalt)' }, { value: 'BATCHING', label: 'Batching' }, { value: 'CRUSHER', label: 'Crusher' }, { value: 'WMM', label: 'WMM' }] },
+      { key: 'subType', label: 'Drum or batch', type: 'select', options: () => [{ value: '', label: '—' }, { value: 'DRUM_MIX', label: 'Drum-mix (continuous)' }, { value: 'BATCH_MIX', label: 'Batch type' }] },
+      { key: 'makeModel', label: 'Make and model' }, { key: 'capacityPerHour', label: 'Rated capacity / hour', type: 'number' }, { key: 'capacityUnit', label: 'Capacity unit', hint: 'e.g. TPH (60–90)' },
+      { key: 'consentedCapacity', label: 'Consented capacity (MT / day)', type: 'number' }, { key: 'consentRef', label: 'Consent to operate (ref. and date)' },
+      { key: 'location', label: 'Location', span: 2 }, { key: 'storeId', label: 'Linked store', type: 'select', options: (db) => db.stores.filter((s) => s.type === 'PLANT').map((s) => ({ value: s.id, label: s.name })), required: true },
+      { key: 'firmId', label: 'Unit name / firm', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.firms.map((f) => ({ value: f.id, label: f.tradeName || f.legalName }))] },
+      { key: 'equipment', label: 'Main equipment', type: 'textarea', span: 2 }, { key: 'power', label: 'Power' }, { key: 'burnerFuel', label: 'Burner fuel' },
+    ],
+    defaults: { type: 'HOT_MIX', costMode: 'ACTUAL', fixedRate: {}, subType: 'DRUM_MIX', inCharges: [] },
     cols: (db) => [
-      { key: 'code', header: 'Code', value: (r) => r.code, cell: (r) => <span className="font-mono text-xs">{r.code}</span> },
-      { key: 'name', header: 'Plant', primary: true, value: (r) => r.name },
-      { key: 'type', header: 'Type', value: (r) => r.type.replace('_', ' ').toLowerCase() },
-      { key: 'cap', header: 'Capacity', value: (r) => `${r.capacityPerHour} ${r.capacityUnit}` },
-      { key: 'ic', header: 'In-charge', value: (r) => lookup(db).user[r.inChargeId]?.name },
+      { key: 'name', header: 'Plant', primary: true, value: (r) => r.name, cell: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[11px] text-muted">{[r.makeModel, r.subType === 'DRUM_MIX' ? 'drum-mix' : r.subType === 'BATCH_MIX' ? 'batch type' : ''].filter(Boolean).join(' · ')}</div></div> },
+      { key: 'type', header: 'Type', value: (r) => ({ HOT_MIX: 'Hot mix', BATCHING: 'Batching', CRUSHER: 'Crusher', WMM: 'WMM' } as Record<string, string>)[r.type] },
+      { key: 'cap', header: 'Capacity', value: (r) => `${r.capacityPerHour} ${r.capacityUnit}`, cell: (r) => <div><div>{r.capacityPerHour} {r.capacityUnit}</div>{r.consentedCapacity ? <div className="text-[11px] text-muted">consent {r.consentedCapacity} MT/day</div> : null}</div> },
+      { key: 'ic', header: 'In-charge', value: (r) => [...(r.inCharges || [])].sort((a: any, b: any) => a.from.localeCompare(b.from)).at(-1)?.name || lookup(db).user[r.inChargeId]?.name },
       activeCell,
     ],
   },
@@ -233,7 +222,7 @@ const MASTERS: Record<string, MasterDef> = {
   },
   boq: {
     coll: 'boq', title: 'BOQ items', req: 'MST-15',
-    fields: [{ key: 'siteId', label: 'Site', type: 'select', options: sitesOpt, required: true }, { key: 'itemNo', label: 'Item no.', required: true }, { key: 'description', label: 'Description', required: true, span: 2 }, { key: 'unit', label: 'Unit' }, { key: 'qty', label: 'Quantity', type: 'number' }, { key: 'rate', label: 'Rate', type: 'money' }, { key: 'recipeId', label: 'Linked recipe', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.recipes.map((r) => ({ value: r.id, label: `${r.code} — ${r.name}` }))] }],
+    fields: [{ key: 'siteId', label: 'Work', type: 'select', options: sitesOpt, required: true }, { key: 'itemNo', label: 'Item no.', required: true }, { key: 'description', label: 'Description', required: true, span: 2 }, { key: 'unit', label: 'Unit' }, { key: 'qty', label: 'Quantity', type: 'number' }, { key: 'rate', label: 'Rate', type: 'money' }, { key: 'recipeId', label: 'Linked recipe', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.recipes.map((r) => ({ value: r.id, label: `${r.code} — ${r.name}` }))] }],
     cols: (db) => [
       { key: 'site', header: 'Site', value: (r) => lookup(db).site[r.siteId]?.short },
       { key: 'no', header: 'Item', value: (r) => r.itemNo },
@@ -250,9 +239,9 @@ export default function Masters() {
   const { tab, tabsEl } = useModuleTab('masters');
   return (
     <div>
-      <PageHeader title="Masters" subtitle="Entered once and reused everywhere — add, edit, deactivate (never delete once used), search, Excel import and export." tags={['MST-01…15', 'TEC-07']} />
+      <PageHeader title="Masters" subtitle="Entered once and reused everywhere — add, edit, deactivate (never delete once used), Excel import and export." />
       {tabsEl}
-      {tab === 'company' ? <CompanyForm /> : tab === 'recipes' ? <RecipesTab /> : MASTERS[tab] ? <MasterTab key={tab} def={MASTERS[tab]!} /> : null}
+      {tab === 'sites' ? <WorksTab /> : tab === 'firms' || tab === 'company' ? <FirmsTab /> : tab === 'import' ? <ImportExportTab /> : tab === 'recipes' ? <RecipesTab /> : MASTERS[tab] ? <MasterTab key={tab} def={MASTERS[tab]!} /> : null}
     </div>
   );
 }
@@ -265,25 +254,8 @@ function MasterTab({ def }: { def: MasterDef }) {
   const rows = useMemo(() => (db[def.coll] as any[]).filter((r) => !q || r.code === q).slice().reverse(), [db, def, q]);
   const cols = useMemo(() => def.cols(db), [db, def]);
   const canAdd = s.can('masters', 'add');
-  const doImport = async () => {
-    const text = await pickFile();
-    if (!text) return;
-    const objs = csvObjects(text);
-    let n = 0;
-    for (const o of objs) {
-      const rec: Record<string, unknown> = { ...(def.defaults || {}) };
-      for (const f of def.fields) {
-        const v = o[f.key.toLowerCase()];
-        if (v === undefined || v === '') continue;
-        rec[f.key] = ['number', 'money', 'pct'].includes(f.type || '') ? Number(v) : f.type === 'toggle' ? /^(y|yes|true|1)$/i.test(v) : v;
-      }
-      if (def.fields.filter((f) => f.required).every((f) => rec[f.key] !== undefined && rec[f.key] !== '')) {
-        insert(def.coll, rec, `${def.title} imported`, def.title);
-        n++;
-      }
-    }
-    toast[n ? 'success' : 'warn'](n ? `${n} records imported` : 'Nothing imported', `CSV headers: ${def.fields.slice(0, 5).map((f) => f.key).join(', ')}…`);
-  };
+  const tpl = templateById(({ clients: 'clients', suppliers: 'suppliers', subcons: 'subcons', materials: 'materials', workers: 'workers', vehicles: 'vehicles', boq: 'boq' } as Record<string, string>)[def.coll] || '');
+  const [importing, setImporting] = useState(false);
   return (
     <>
       <DataTable
@@ -299,13 +271,15 @@ function MasterTab({ def }: { def: MasterDef }) {
         toolbar={
           canAdd && (
             <>
-              <Button icon={<FileUp className="w-4 h-4" />} onClick={doImport}>Import</Button>
+              {tpl && <Button icon={<FileSpreadsheet className="w-4 h-4" />} onClick={() => exportTemplate(db, tpl)}>Export</Button>}
+              {tpl && <Button icon={<FileUp className="w-4 h-4" />} onClick={() => setImporting(true)}>Import</Button>}
               <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setEdit({ ...(def.defaults || {}) })}>Add</Button>
             </>
           )
         }
       />
-      {edit && <MasterForm def={def} rec={edit} onClose={() => setEdit(null)} />}
+      {edit && (def.coll === 'clients' ? <ClientForm rec={edit} onClose={() => setEdit(null)} /> : <MasterForm def={def} rec={edit} onClose={() => setEdit(null)} />)}
+      {importing && tpl && <ImportDialog template={tpl} onClose={() => setImporting(false)} />}
     </>
   );
 }
@@ -316,6 +290,7 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
   const isNew = !rec.id;
   const [v, setV] = useState<Record<string, any>>({ ...rec });
   const [docs, setDocs] = useState<VehicleDoc[]>(rec.docs || []);
+  const [inCharges, setInCharges] = useState<Array<{ name: string; from: string; userId?: string }>>(rec.inCharges || []);
   const set = (k: string, x: unknown) => setV((o) => ({ ...o, [k]: x }));
   const save = () => {
     for (const f of def.fields) if (f.required && (v[f.key] === undefined || v[f.key] === '')) return toast.error(`${f.label} is required`);
@@ -327,9 +302,12 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
       out[f.key] = x;
     }
     if (def.coll === 'vehicles') out.docs = docs;
+    if (def.coll === 'plants') {
+      if (inCharges.some((h) => !h.name || !h.from)) return toast.error('Each in-charge needs a name and an effective date');
+      out.inCharges = inCharges;
+    }
     if (isNew) {
-      const created = insert(def.coll, { ...(def.defaults || {}), ...out }, `${def.title}: ${out.name || out.code || out.head || ''} added`, def.title);
-      if (def.coll === 'sites') insert('stores', { code: `ST-${out.code}`, name: `${out.short} Site Store`, type: 'SITE', siteId: created.id } as any, 'Site store created', 'Store');
+      insert(def.coll, { ...(def.defaults || {}), ...out }, `${def.title}: ${out.name || out.code || out.head || ''} added`, def.title);
       toast.success('Added');
     } else {
       update(def.coll, rec.id, out, `${def.title}: ${out.name || out.code || out.head || ''} updated`, def.title);
@@ -347,7 +325,6 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
       open
       onClose={onClose}
       title={isNew ? `Add ${def.title.toLowerCase().replace(/s$/, '')}` : rec.name || rec.code || rec.head || 'Edit'}
-      subtitle={def.req}
       footer={
         <>
           {!isNew && s.can('masters', 'delete') && 'active' in rec && (
@@ -379,16 +356,32 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
           </Field>
         ))}
       </div>
+      {def.coll === 'plants' && (
+        <div className="mt-6">
+          <Section title="In-charge (with effective date)" action={<Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setInCharges([...inCharges, { name: '', from: '' }])}>Change in-charge</Button>}>
+            <div className="space-y-2">
+              {inCharges.length === 0 && <p className="text-xs text-muted">Not set.</p>}
+              {inCharges.map((h, i) => (
+                <div key={i} className="grid grid-cols-12 gap-2">
+                  <div className="col-span-6"><Input value={h.name} onChange={(e) => setInCharges(inCharges.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)))} placeholder="Name" aria-label="In-charge name" /></div>
+                  <div className="col-span-5"><Input type="date" value={h.from} onChange={(e) => setInCharges(inCharges.map((y, j) => (j === i ? { ...y, from: e.target.value } : y)))} aria-label="Effective from" /></div>
+                  <div className="col-span-1"><Button variant="ghost" size="icon" onClick={() => setInCharges(inCharges.filter((_, j) => j !== i))} aria-label="Remove in-charge" title="Remove"><Trash2 className="w-4 h-4" /></Button></div>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
+      )}
       {def.coll === 'vehicles' && (
         <div className="mt-6">
-          <Section title="Documents — insurance, fitness, permit, PUC, road tax (DOC-01)" action={<Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setDocs([...docs, { type: 'Insurance', number: '', expiry: '' }])}>Add</Button>}>
+          <Section title="Documents — insurance, fitness, permit, PUC, road tax" action={<Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setDocs([...docs, { type: 'Insurance', number: '', expiry: '' }])}>Add</Button>}>
             <div className="space-y-2">
               {docs.map((d, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2">
                   <div className="col-span-4"><Select value={d.type} onChange={(x) => setDocs(docs.map((y, j) => (j === i ? { ...y, type: x as VehicleDoc['type'] } : y)))} options={['Insurance', 'Fitness', 'Permit', 'PUC', 'Road Tax', 'Driver Licence'].map((x) => ({ value: x, label: x }))} /></div>
                   <div className="col-span-4"><Input value={d.number} onChange={(e) => setDocs(docs.map((y, j) => (j === i ? { ...y, number: e.target.value } : y)))} placeholder="Number" /></div>
                   <div className="col-span-3"><Input type="date" value={d.expiry} onChange={(e) => setDocs(docs.map((y, j) => (j === i ? { ...y, expiry: e.target.value } : y)))} /></div>
-                  <div className="col-span-1"><Button variant="ghost" size="icon" onClick={() => setDocs(docs.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 className="w-4 h-4" /></Button></div>
+                  <div className="col-span-1"><Button variant="ghost" size="icon" onClick={() => setDocs(docs.filter((_, j) => j !== i))} aria-label="Remove document" title="Remove"><Trash2 className="w-4 h-4" /></Button></div>
                 </div>
               ))}
             </div>
@@ -399,7 +392,7 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
   );
 }
 
-/* ---------- Recipes / BOM (MST-14) ---------- */
+/* ---------- Recipes / BOM ---------- */
 function RecipesTab() {
   const db = useDB();
   const s = useSession();
@@ -407,7 +400,7 @@ function RecipesTab() {
   const [edit, setEdit] = useState<any | null>(null);
   return (
     <>
-      <Callout className="mb-4">For each plant product or work item: raw materials and quantity per unit — e.g. per MT of bituminous mix, per cum of M25 concrete. A site- or client-specific job mix can override the default (PLT-07).</Callout>
+      <Callout className="mb-4">For each plant product or work item: raw materials and quantity per unit — e.g. per MT of bituminous mix, per cum of M25 concrete. A site- or client-specific job mix can override the default.</Callout>
       <div className="flex justify-end mb-3">{s.can('masters', 'add') && <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setEdit({ code: '', name: '', productId: '', perUnit: 'MT', lines: [{ materialId: '', qty: 0 }] })}>Add recipe</Button>}</div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 stagger">
         {db.recipes.map((r) => (
@@ -448,14 +441,14 @@ function RecipeForm({ rec, onClose }: { rec: any; onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title={rec.id ? rec.name : 'New recipe'} subtitle="MST-14 · bill of materials" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
+    <Drawer open onClose={onClose} title={rec.id ? rec.name : 'New recipe'} subtitle="bill of materials" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Code" required><Input value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} /></Field>
           <Field label="Per unit"><Select value={v.perUnit} onChange={(x) => setV({ ...v, perUnit: x })} options={['MT', 'CUM', 'SQM', 'RMT', 'NOS'].map((x) => ({ value: x, label: x }))} /></Field>
           <Field label="Name" required className="sm:col-span-2"><Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
           <Field label="Plant product (blank for a work item)"><Combo value={v.productId} onChange={(x) => setV({ ...v, productId: x })} options={[{ value: '', label: '— Work item —' }, ...materialOptions(db, (m) => m.kind !== 'RAW')]} /></Field>
-          <Field label="Site-specific for (PLT-07)"><Select value={v.siteId || ''} onChange={(x) => setV({ ...v, siteId: x || undefined })} options={[{ value: '', label: 'All sites (default)' }, ...db.sites.map((s) => ({ value: s.id, label: s.short }))]} /></Field>
+          <Field label="Site-specific for"><Select value={v.siteId || ''} onChange={(x) => setV({ ...v, siteId: x || undefined })} options={[{ value: '', label: 'All sites (default)' }, ...db.sites.map((s) => ({ value: s.id, label: s.short }))]} /></Field>
         </div>
         <Section title="Materials per unit" action={<Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setV({ ...v, lines: [...v.lines, { materialId: '', qty: 0 }] })}>Add</Button>}>
           {v.lines.map((l: any, i: number) => (
@@ -468,45 +461,5 @@ function RecipeForm({ rec, onClose }: { rec: any; onClose: () => void }) {
         </Section>
       </div>
     </Drawer>
-  );
-}
-
-/* ---------- Company (MST-01) ---------- */
-function CompanyForm() {
-  const db = useDB();
-  const s = useSession();
-  const [v, setV] = useState({ ...db.company });
-  const set = (k: string, x: string) => setV({ ...v, [k]: x });
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <Card className="lg:col-span-2">
-        <CardHeader title="Company / firm" subtitle="MST-01" />
-        <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Name" className="sm:col-span-2"><Input value={v.name} onChange={(e) => set('name', e.target.value)} /></Field>
-          <Field label="GSTIN"><Input value={v.gstin} onChange={(e) => set('gstin', e.target.value)} /></Field>
-          <Field label="PAN"><Input value={v.pan} onChange={(e) => set('pan', e.target.value)} /></Field>
-          <Field label="Address" className="sm:col-span-2"><Textarea value={v.address} onChange={(e) => set('address', e.target.value)} /></Field>
-          <Field label="Phone"><Input value={v.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
-          <Field label="Email"><Input value={v.email} onChange={(e) => set('email', e.target.value)} /></Field>
-          <Field label="Financial year"><Input value={`${v.fy} (April – March)`} disabled /></Field>
-          <div className="sm:col-span-2 flex justify-end">{s.isAdmin && <Button variant="primary" onClick={() => (updateCompany(v), toast.success('Company profile saved'))}>Save</Button>}</div>
-        </div>
-      </Card>
-      <Card>
-        <CardHeader title="Bank accounts" />
-        <div className="px-5 pb-5 space-y-2">
-          {db.company.banks.map((b) => (
-            <div key={b.account} className="rounded-xl border border-line p-3">
-              <div className="font-medium text-sm">{b.bank}</div>
-              <div className="text-xs text-muted font-mono">{b.account} · {b.ifsc}</div>
-            </div>
-          ))}
-          <div className="rounded-xl border-2 border-dashed border-line p-6 text-center text-xs text-muted">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-600 mx-auto mb-2" />
-            Company logo — appears on POs, invoices and payslips
-          </div>
-        </div>
-      </Card>
-    </div>
   );
 }

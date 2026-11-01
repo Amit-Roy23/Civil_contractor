@@ -45,6 +45,8 @@ export class FieldMaskingInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
     const user = request.user as JwtUserPayload | undefined;
+    // v2 masks per role itself (@civil/domain visibility) — stripping keys here would remove every amount
+    if (String(request.originalUrl || request.url || '').startsWith('/api/v2/')) return next.handle();
 
     // Check if user has rates.view permission or is Admin
     const canViewRates =

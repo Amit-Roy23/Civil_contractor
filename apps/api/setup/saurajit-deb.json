@@ -1,0 +1,132 @@
+{
+  "$comment": "Starting masters for Saurajit Deb (answers to Queries 2-4 of 30 Oct 2026). No sample works or transactions: works are entered by the owner. Blank fields (TAN, banks, EPF code, licence numbers, client GSTIN, circle) are filled in by the owner. Vehicles follow FLT-01 and are provisional until the owner confirms the list.",
+  "company": {
+    "name": "SAURAJIT DEB",
+    "gstin": "16BGXPD9663C1Z0",
+    "pan": "BGXPD9663C",
+    "address": "Chandrapur, Ashram Road, Dharmanagar, North Tripura – 799251",
+    "phone": "8974360194",
+    "email": "saurajitdeb@ymail.com",
+    "banks": []
+  },
+  "owner": { "name": "Saurajit Deb", "username": "saurajit", "phone": "8974360194", "email": "saurajitdeb@ymail.com" },
+  "firms": [
+    {
+      "code": "SD",
+      "legalName": "SAURAJIT DEB",
+      "tradeName": "M/s Saurajit Deb",
+      "constitution": "PROPRIETOR",
+      "gstin": "16BGXPD9663C1Z0",
+      "gstRegType": "Regular — Tripura",
+      "gstLiableFrom": "2020-08-29",
+      "pan": "BGXPD9663C",
+      "tan": "",
+      "udyam": "UDYAM-TR-04-0000658",
+      "enlistment": { "dept": "PWD (R&B), Government of Tripura", "no": "PWD/TRIP/C-III/00166", "cls": "Class-III", "limit": 35000000, "validTo": "2031-07-31" },
+      "address": "Chandrapur, Ashram Road, Dharmanagar, North Tripura – 799251",
+      "places": [{ "name": "Hot mix plant (additional place of business)", "address": "Kalikapur, Ward No. 6, East Huplong, Dharmanagar, North Tripura – 799254" }],
+      "contactName": "Saurajit Deb, Proprietor",
+      "phone": "8974360194",
+      "email": "saurajitdeb@ymail.com",
+      "labourLicence": { "no": "", "authority": "Directorate of Labour, Tripura", "validTo": "", "note": "Contract labour licence — half-yearly return on the SWAAGAT portal" },
+      "epfCode": "",
+      "esicCode": "",
+      "banks": [],
+      "invoicePrefix": "SD/INV"
+    }
+  ],
+  "clients": [
+    {
+      "code": "PWD-RB-TR",
+      "name": "PWD (R&B), Government of Tripura",
+      "kind": "GOVT",
+      "gstin": "",
+      "address": "",
+      "billingContact": "EE, PWD (R&B) Dharmanagar Division",
+      "offices": [
+        {
+          "circle": "",
+          "division": "PWD (R&B) Dharmanagar Division",
+          "subDivision": "",
+          "address": "Dharmanagar, North Tripura",
+          "email": "",
+          "gstin": "",
+          "contacts": [
+            { "designation": "EE", "name": "", "phone": "" },
+            { "designation": "AE / SDO", "name": "", "phone": "" },
+            { "designation": "JE", "name": "", "phone": "" }
+          ]
+        }
+      ],
+      "deductions": { "gstTdsPct": 2, "gstTdsThreshold": 250000, "itTdsPct": 1, "itTdsOnGst": false, "labourCessPct": 1, "labourCessOnGst": false, "tcsPct": 0, "others": [] }
+    }
+  ],
+  "stores": [
+    {
+      "code": "CG-01",
+      "name": "Central Godown — Chandrapur",
+      "type": "CENTRAL",
+      "address": "Chandrapur, Ashram Road, Dharmanagar, North Tripura – 799251",
+      "holds": "Cement, steel, pipes, tools, spares, consumables, safety items; bulk purchases before issue to sites"
+    },
+    {
+      "code": "PS-01",
+      "name": "Plant Store — Kalikapur",
+      "type": "PLANT",
+      "plantCode": "HMP-01",
+      "address": "Kalikapur, Ward No. 6, East Huplong, Dharmanagar, North Tripura – 799254",
+      "holds": "Aggregates by size, stone dust, filler, bitumen (25 MT heated tank), LDO / diesel (5,700 litre tank), emulsion, plant spares"
+    }
+  ],
+  "plants": [
+    {
+      "code": "HMP-01",
+      "name": "Hot Mix Plant — Kalikapur",
+      "type": "HOT_MIX",
+      "subType": "DRUM_MIX",
+      "makeModel": "PRIMAX PDM-50",
+      "capacityPerHour": 90,
+      "capacityUnit": "TPH (60–90)",
+      "consentedCapacity": 415,
+      "consentRef": "Tripura SPCB Consent to Operate dated 30/04/2026",
+      "location": "Kalikapur, Ward No. 6, East Huplong, Dharmanagar, North Tripura – 799254 (Khatian 420, Dag 10, Mouza Purba Huplong)",
+      "storeCode": "PS-01",
+      "costMode": "ACTUAL",
+      "fixedRate": {},
+      "inCharges": [{ "name": "Saurajit Deb", "from": "" }],
+      "equipment": "Four-bin cold feeder; dryer and mixing drum with burner; bitumen tank 25 MT (heated); LDO tank 5,700 litres; pollution control unit; control cabin",
+      "power": "125 kVA Kirloskar DG set (captive)",
+      "burnerFuel": "LDO / diesel"
+    }
+  ],
+  "materials": [
+    { "code": "BIT-VG30", "name": "Bitumen VG-30", "category": "Bitumen", "unit": "MT", "hsn": "27132000", "gstPct": 18, "tolerancePct": 2 },
+    { "code": "BIT-EMUL", "name": "Bitumen emulsion (RS-1)", "category": "Bitumen", "unit": "MT", "hsn": "27150090", "gstPct": 18 },
+    { "code": "AGG-20", "name": "Aggregate 20 mm", "category": "Aggregate", "unit": "MT", "hsn": "25174100", "gstPct": 5 },
+    { "code": "AGG-10", "name": "Aggregate 10 mm", "category": "Aggregate", "unit": "MT", "hsn": "25174100", "gstPct": 5 },
+    { "code": "AGG-06", "name": "Aggregate 6 mm", "category": "Aggregate", "unit": "MT", "hsn": "25174100", "gstPct": 5 },
+    { "code": "STN-DUST", "name": "Stone dust", "category": "Aggregate", "unit": "MT", "hsn": "25174900", "gstPct": 5 },
+    { "code": "FILLER", "name": "Filler (cement / lime)", "category": "Aggregate", "unit": "MT", "hsn": "25232930", "gstPct": 18 },
+    { "code": "SAND", "name": "Sand", "category": "Sand", "unit": "CUM", "hsn": "25059000", "gstPct": 5 },
+    { "code": "LDO", "name": "LDO (burner fuel)", "category": "Fuel & Lubricants", "unit": "LTR", "hsn": "27101960", "gstPct": 18 },
+    { "code": "HSD", "name": "Diesel (HSD)", "category": "Fuel & Lubricants", "unit": "LTR", "hsn": "27101944", "gstPct": 0 },
+    { "code": "CEM-OPC53", "name": "Cement OPC 53", "category": "Cement", "unit": "MT", "altUnit": "BAG", "altFactor": 0.05, "hsn": "25232930", "gstPct": 18 },
+    { "code": "TMT-500D", "name": "TMT bar Fe-500D", "category": "Steel", "unit": "MT", "hsn": "72142090", "gstPct": 18 }
+  ],
+  "vehicles": [
+    { "code": "TIP-01", "regNo": "TR05K1886", "type": "Tipper", "make": "Tata", "model": "Tipper", "meterType": "KM" },
+    { "code": "TIP-02", "regNo": "TR05F1888", "type": "Tipper", "make": "Tata", "model": "Tipper", "meterType": "KM" },
+    { "code": "PVR-01", "regNo": "", "type": "Paver Finisher", "model": "Paver finisher" },
+    { "code": "CMP-01", "regNo": "", "type": "Compactor", "model": "Tandem vibratory compactor" },
+    { "code": "RLR-01", "regNo": "", "type": "Roller", "model": "Road roller" },
+    { "code": "MHM-01", "regNo": "", "type": "Mobile Hot Mix", "model": "Mobile hot mix unit 1" },
+    { "code": "MHM-02", "regNo": "", "type": "Mobile Hot Mix", "model": "Mobile hot mix unit 2" },
+    { "code": "BSP-01", "regNo": "", "type": "Bitumen Sprayer", "model": "Bitumen sprayer" },
+    { "code": "RCM-01", "regNo": "", "type": "Road Cleaner", "model": "Road cleaning machine" },
+    { "code": "SWP-01", "regNo": "", "type": "Sweeper", "model": "Tractor-mounted sweeper" },
+    { "code": "TMM-01", "regNo": "", "type": "Marking Machine", "model": "Thermoplastic marking machine" },
+    { "code": "CMX-01", "regNo": "", "type": "Concrete Mixer", "model": "Concrete mixer" },
+    { "code": "DG-125", "regNo": "", "type": "Generator", "make": "Kirloskar", "model": "DG set 125 kVA" },
+    { "code": "DG-30", "regNo": "", "type": "Generator", "model": "DG set 30 kVA" }
+  ]
+}

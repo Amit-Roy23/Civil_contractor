@@ -28,7 +28,6 @@ export default function Reports() {
       <PageHeader
         title="Reports"
         subtitle="Every report filters by date range, site, plant, material, vehicle and supplier, and exports to Excel and PDF."
-        tags={['11.2', 'TEC-07']}
         actions={<SearchBox value={q} onChange={setQ} placeholder="Find a report…" className="w-72" />}
       />
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 stagger">

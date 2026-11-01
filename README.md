@@ -114,6 +114,9 @@ pnpm db:seed
 pnpm dev
 ```
 
+> **Server mode:** the web app is a self-contained demo by default. Build it with `VITE_DATA_MODE=api` to use real
+> logins and save data on the server (all modules, rules enforced server-side). See [docs/SERVER_MODE.md](docs/SERVER_MODE.md).
+
 The apps will be available at:
 - **Frontend SPA**: `http://localhost:5173`
 - **Backend API**: `http://localhost:3000`
