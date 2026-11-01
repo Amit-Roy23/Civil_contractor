@@ -1,4 +1,6 @@
 import { vehicleName } from './works.js';
+import { billTotals, deductionDiff, mQty } from './billing.js';
+import { guaranteeAlerts } from './money.js';
 import type { CostHead, DB, Dispatch, FuelIssue, ID, LogEntry, PurchaseInvoice, RaBill, StockTxn, SubconBill, Vehicle } from './types.js';
 import { bkey, getLedger, isEffective, productionUse, type Movement } from './ledger.js';
 import { addDays, daysBetween, monthOf, today } from './format.js';
@@ -205,7 +207,7 @@ export function theoreticalVsActual(db: DB, r: Range, siteId?: ID): TvaRow[] {
       const b = lk.boq[ms.boqItemId];
       if (!b?.recipeId) continue;
       const rec = lk.recipe[b.recipeId];
-      rec?.lines.forEach((l) => (row(ms.siteId, l.materialId).theoretical += l.qty * ms.qty));
+      rec?.lines.forEach((l) => (row(ms.siteId, l.materialId).theoretical += l.qty * mQty(ms)));
     }
     for (const t of db.stockTxns) {
       if (t.type !== 'CONSUMPTION' || !isEffective(t) || !inRange(t.date, r) || !t.boqItemId) continue;
@@ -853,12 +855,8 @@ export function plantReconciliation(db: DB, plantId: ID, month: string) {
 /* ================= Contract & billing (§10) ================= */
 
 export function raCalc(b: RaBill) {
-  const gross = sum(b.lines, (l) => l.thisQty * l.rate) + (b.escalation || 0);
-  const gst = (gross * b.gstPct) / 100;
-  const deductions = sum(Object.values(b.deductions), (x) => x);
-  const net = gross + gst - deductions;
-  const received = sum(b.receipts, (x) => x.amount);
-  return { gross, gst, deductions, net, received, outstanding: Math.max(0, net - received) };
+  const x = billTotals(b);
+  return { gross: x.gross, gst: x.gst, deductions: x.deductions, net: x.net, received: x.received, outstanding: x.outstanding };
 }
 
 export function boqProgress(db: DB, siteId: ID) {
@@ -866,7 +864,7 @@ export function boqProgress(db: DB, siteId: ID) {
     db.boq
       .filter((b) => b.siteId === siteId)
       .map((b) => {
-        const executed = sum(db.measurements.filter((m) => m.boqItemId === b.id), (m) => m.qty);
+        const executed = sum(db.measurements.filter((m) => m.boqItemId === b.id), mQty);
         const billed = Math.max(0, ...db.raBills.filter((r) => r.siteId === siteId).map((r) => r.lines.find((l) => l.boqItemId === b.id)?.uptoQty || 0));
         return { item: b, executed, pct: b.qty ? (executed / b.qty) * 100 : 0, balance: b.qty - executed, amount: b.qty * b.rate, doneValue: executed * b.rate, billed };
       }),
@@ -880,7 +878,7 @@ export function receivablesAgeing(db: DB) {
     for (const b of db.raBills) {
       const c = raCalc(b);
       if (c.outstanding <= 1 || b.status === 'DRAFT') continue;
-      const age = daysBetween(b.date, today());
+      const age = daysBetween(b.submittedOn || b.date, today());
       out.push({ clientId: lk.site[b.siteId]!.clientId, siteId: b.siteId, billNo: b.no, date: b.date, net: c.net, outstanding: c.outstanding, age, bucket: age <= 30 ? '0–30' : age <= 60 ? '31–60' : age <= 90 ? '61–90' : '90+', status: b.status });
     }
     return out;
@@ -948,7 +946,7 @@ export function siteCostSheet(db: DB, siteId: ID, r?: Range) {
     }
     if (!r) for (const h of COST_HEADS) heads[h] += site.openingCost[h] || 0;
     const cost = sum(COST_HEADS, (h) => heads[h]);
-    const workDone0 = sum(db.measurements.filter((m) => m.siteId === siteId && inRange(m.date, r)), (m) => m.qty * (lookup(db).boq[m.boqItemId]?.rate || 0));
+    const workDone0 = sum(db.measurements.filter((m) => m.siteId === siteId && inRange(m.date, r)), (m) => mQty(m) * (lookup(db).boq[m.boqItemId]?.rate || 0));
     const bills = db.raBills.filter((b) => b.siteId === siteId && inRange(b.date, r));
     const billed0 = sum(bills, (b) => raCalc(b).gross);
     const received0 = sum(db.raBills.filter((b) => b.siteId === siteId), (b) => sum(b.receipts.filter((x) => inRange(x.date, r)), (x) => x.amount));
@@ -1004,7 +1002,7 @@ export function pendingApprovals(db: DB): ApprovalItem[] {
 
 export interface Alert {
   id: string;
-  code: 'ALT-01' | 'ALT-02' | 'ALT-03' | 'ALT-04' | 'ALT-05' | 'ALT-06' | 'ALT-07';
+  code: 'ALT-01' | 'ALT-02' | 'ALT-03' | 'ALT-04' | 'ALT-05' | 'ALT-06' | 'ALT-07' | 'ALT-08';
   severity: 'critical' | 'serious' | 'warning';
   title: string;
   detail: string;
@@ -1079,6 +1077,20 @@ export function alerts(db: DB): Alert[] {
     if (pay.length) out.push({ id: 'a7p', code: 'ALT-07', severity: 'serious', title: `${pay.length} suppliers have overdue payments`, detail: pay.slice(0, 3).map((p) => `${lk.supplier[p.supplierId]?.name} ₹${Math.round(p.overdue).toLocaleString('en-IN')}`).join(' · '), link: '/purchase/payables' });
     const rec = receivablesAgeing(db).filter((x) => x.age > 45);
     if (rec.length) out.push({ id: 'a7r', code: 'ALT-07', severity: 'warning', title: `${rec.length} RA bills overdue from clients (> 45 days)`, detail: rec.slice(0, 3).map((x) => `${x.billNo}`).join(' · '), link: '/contract/receivables' });
+    // BIL-06: division's actual deductions differ from the work profile
+    for (const b of db.raBills) {
+      const d = deductionDiff(b);
+      if (d.length) out.push({ id: `a7d-${b.id}`, code: 'ALT-07', severity: 'warning', title: `${b.no}: deductions differ from expected`, detail: d.slice(0, 3).map((x) => `${x.head} ${x.diff > 0 ? '+' : ''}₹${Math.round(x.diff).toLocaleString('en-IN')}`).join(' · '), siteId: b.siteId, link: `/contract/bills?q=${encodeURIComponent(b.no)}` });
+    }
+    // ALT-08 (SEC-02): guarantees and FDRs expiring in 60 / 30 / 15 / 7 days
+    for (const { g, due } of guaranteeAlerts(db, today())) {
+      const what = `${({ EMD: 'EMD', PS: 'Performance security', APS: 'Additional performance security', SD: 'Security deposit', ADVANCE: 'Advance BG', OTHER: 'Guarantee' } as Record<string, string>)[g.kind]} ${g.instrument} ${g.number}`.trim();
+      out.push({
+        id: `a8-${g.id}`, code: 'ALT-08', severity: due!.days < 0 || due!.days <= 7 ? 'critical' : due!.days <= 15 ? 'serious' : 'warning',
+        title: due!.days < 0 ? `${what} expired ${-due!.days} days ago` : `${what} expires in ${due!.days} days`,
+        detail: `${g.bank} · ₹${Math.round(g.amount).toLocaleString('en-IN')}${g.siteId ? ` · ${lk.site[g.siteId]?.short}` : ''} · valid to ${g.expiryDate}`, siteId: g.siteId, link: '/contract/guarantees',
+      });
+    }
     const order = { critical: 0, serious: 1, warning: 2 };
     return out.sort((a, b) => order[a.severity] - order[b.severity]);
   });

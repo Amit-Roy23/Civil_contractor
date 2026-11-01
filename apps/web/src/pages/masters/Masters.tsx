@@ -11,6 +11,7 @@ import { inr, inrCompact, qty } from '../../lib/format';
 import { cn } from '../../lib/utils';
 import { materialOptions, useModuleTab, useQueryParam } from '../shared';
 import { templateById } from '@civil/domain/imports';
+import { tdsSections } from '@civil/domain/billing';
 import { ClientForm, FirmsTab, WorksTab } from './WorkForm';
 import { ImportDialog, ImportExportTab, exportTemplate } from './ImportExport';
 
@@ -36,6 +37,8 @@ interface MasterDef {
 }
 
 const opt = (arr: string[]) => () => arr.map((x) => ({ value: x, label: x }));
+const ENTITY = () => [{ value: '', label: '—' }, { value: 'INDIVIDUAL', label: 'Individual' }, { value: 'HUF', label: 'HUF' }, { value: 'FIRM', label: 'Firm' }, { value: 'LLP', label: 'LLP' }, { value: 'COMPANY', label: 'Company' }, { value: 'OTHER', label: 'Other' }];
+const tdsOpts = (db: DB) => [{ value: '', label: 'As per party type (default)' }, { value: 'NONE', label: 'No TDS' }, ...tdsSections(db).map((x) => ({ value: x.code, label: x.label }))];
 const sitesOpt = (db: DB) => db.sites.filter((s) => !(s as any).outOfScope && s.status !== 'COMPLETED').map((s) => ({ value: s.id, label: s.short }));
 const activeCell = { key: 'active', header: 'Status', value: (r: any) => (r.active === false ? 'Inactive' : 'Active'), cell: (r: any) => (r.active === false ? <Badge>Inactive</Badge> : <Badge tone="good" dot>Active</Badge>) };
 
@@ -71,6 +74,7 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'address', label: 'Address', span: 2 }, { key: 'contact', label: 'Contact person' }, { key: 'phone', label: 'Phone' }, { key: 'bank', label: 'Bank details', span: 2 },
       { key: 'materials', label: 'Materials supplied', span: 2 }, { key: 'kind', label: 'Type', type: 'select', options: () => [{ value: 'MATERIAL', label: 'Material' }, { value: 'FUEL_PUMP', label: 'Fuel pump' }, { value: 'VEHICLE_OWNER', label: 'Vehicle owner' }, { value: 'SERVICE', label: 'Service' }] },
       { key: 'creditDays', label: 'Credit days', type: 'number' }, { key: 'openingBalance', label: 'Opening balance', type: 'money' },
+      { key: 'entityType', label: 'PAN holder type', type: 'select', options: ENTITY, hint: 'Blank = read from the PAN' }, { key: 'tdsCode', label: 'TDS on payments', type: 'select', options: tdsOpts }, { key: 'transporter10', label: 'Transporter with ≤10 goods carriages (declaration on file — no TDS)', type: 'toggle' },
     ],
     defaults: { kind: 'MATERIAL', creditDays: 30, openingBalance: 0 },
     cols: () => [
@@ -103,6 +107,7 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'rateType', label: 'Rate type', type: 'select', options: () => [{ value: 'PER_DAY', label: 'Per day' }, { value: 'PER_UNIT', label: 'Per unit of work' }, { value: 'LUMP_SUM', label: 'Lump sum' }] },
       { key: 'trade', label: 'Trade' }, { key: 'phone', label: 'Phone' }, { key: 'pan', label: 'PAN' }, { key: 'gstin', label: 'GSTIN' }, { key: 'bank', label: 'Bank details', span: 2 }, { key: 'openingBalance', label: 'Opening balance', type: 'money' },
       { key: 'licenceNo', label: 'Labour licence no.' }, { key: 'licenceExpiry', label: 'Licence expiry', type: 'date' }, { key: 'pfNo', label: 'PF no.' }, { key: 'esiNo', label: 'ESI no.' }, { key: 'bocwNo', label: 'BOCW registration' },
+      { key: 'entityType', label: 'PAN holder type', type: 'select', options: ENTITY, hint: 'Blank = read from the PAN' }, { key: 'tdsCode', label: 'TDS on payments', type: 'select', options: tdsOpts },
     ],
     defaults: { kind: 'LABOUR_CONTRACTOR', rateType: 'PER_DAY', openingBalance: 0, tradeRates: { Mason: 850, Helper: 520 } },
     cols: () => [

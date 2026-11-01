@@ -64,7 +64,11 @@ export function recordInScope(db: DB, s: Session, coll: CollectionKey, r: any): 
     case 'payments':
     case 'debitNotes':
     case 'overheads':
+    case 'bankFacilities':
+    case 'taxCredits':
       return s.allSites && s.showRates;
+    case 'guarantees':
+      return s.showRates && (r.siteId ? site(r.siteId) : s.allSites);
     case 'notifications':
       return !r.userId || r.userId === s.user.id;
     case 'audit':

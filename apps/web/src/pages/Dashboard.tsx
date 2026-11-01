@@ -1,3 +1,4 @@
+import { guaranteeDue, moneyBlocked } from '@civil/domain/money';
 import { vehicleName } from '@civil/domain/works';
 import { useMemo } from 'react';
 import {
@@ -98,6 +99,8 @@ export default function Dashboard() {
   const al = useMemo(() => alerts(db).filter((a) => s.seesSite(a.siteId) && (!siteId || !a.siteId || a.siteId === siteId)), [db, s, siteId]);
   const payables = useMemo(() => payablesAgeing(db), [db]);
   const receivables = useMemo(() => receivablesAgeing(db).filter((r) => visibleSites.has(r.siteId)), [db, siteId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const blocked = useMemo(() => moneyBlocked(db).filter((x) => s.seesSite(x.siteId)), [db, s]);
+  const guaranteesDue = useMemo(() => db.guarantees.filter((g) => { const d = guaranteeDue(g, today()); return d && d.days <= 30; }).length, [db]);
 
   // plant today
   const prodToday = todayStats.production;
@@ -385,6 +388,14 @@ export default function Dashboard() {
                     <span className="block text-[11px] text-muted">{receivables.filter((r) => r.age > 45).length} bills older than 45 days</span>
                   </span>
                   <span className="text-base font-bold text-good">{inrCompact(sum(receivables, (r) => r.outstanding))}</span>
+                </button>
+                {/* SEC-04: money blocked in EMD, security deposits and BG margins */}
+                <button onClick={() => navigate('/contract/guarantees')} className="w-full flex items-center justify-between p-3 rounded-xl bg-surface-2 border border-line hover:border-line-strong">
+                  <span className="text-left">
+                    <span className="block text-sm font-medium">Money blocked in works</span>
+                    <span className="block text-[11px] text-muted">{guaranteesDue} guarantee(s) expiring within 30 days</span>
+                  </span>
+                  <span className="text-base font-bold text-violet">{inrCompact(sum(blocked, (x) => x.total))}</span>
                 </button>
               </>
             )}

@@ -1,3 +1,4 @@
+import { tdsFor } from '@civil/domain/billing';
 import { vehicleLabel } from '@civil/domain/works';
 import { useMemo, useState } from 'react';
 import { CircleCheck, FileText, PackageCheck, Plus, Printer, Send, ShoppingCart, Trophy, Truck, Wallet } from 'lucide-react';
@@ -8,7 +9,7 @@ import { avgRate } from '../../data/ledger';
 import type { ID, POLine, PurchaseInvoice, PurchaseOrder, Requisition, StockLine, StockTxn } from '../../data/types';
 import { Badge, Button, Callout, Card, CardHeader, Drawer, KV, PageHeader, Section, Stat, StatusBadge, toast } from '../../components/ui/core';
 import { DataTable } from '../../components/ui/DataTable';
-import { Combo, DateRangePicker, Field, Input, NumberInput, Select, Textarea, AttachField } from '../../components/ui/fields';
+import { Combo, DateRangePicker, Field, Input, NumberInput, Select, Textarea, AttachField, Segmented } from '../../components/ui/fields';
 import { ColumnChart } from '../../components/ui/charts';
 import { addDays, date, inr, inrCompact, qty, today } from '../../lib/format';
 import { printDocument, shareWhatsApp } from '../../lib/export';
@@ -835,32 +836,41 @@ function PaymentsTab() {
 
 function PaymentForm({ onClose, supplierId }: { onClose: () => void; supplierId?: string }) {
   const db = useDB();
+  const [partyType, setPartyType] = useState<'SUPPLIER' | 'SUBCON'>('SUPPLIER');
   const [sup, setSup] = useState(supplierId || '');
   const [amount, setAmount] = useState<number | ''>('');
-  const [tdsPct, setTdsPct] = useState<number | ''>(0);
+  const [tdsPct, setTdsPct] = useState<number | ''>('');
   const [mode, setMode] = useState('BANK');
   const [kind, setKind] = useState('PART');
   const [ref, setRef] = useState('');
   const [d, setD] = useState(today());
-  const bal = sup ? supplierBalance(db, sup) : 0;
-  const tds = Math.round((Number(amount || 0) * Number(tdsPct || 0)) / 100);
+  const bal = sup && partyType === 'SUPPLIER' ? supplierBalance(db, sup) : 0;
+  // Query 2: TDS by the rules (section, PAN, entity, limits) — can be changed by hand
+  const rule = sup && amount ? tdsFor(db, partyType, sup, Number(amount), d) : null;
+  const pct = tdsPct === '' ? rule?.rate || 0 : Number(tdsPct);
+  const tds = Math.round((Number(amount || 0) * pct) / 100);
   const save = () => {
-    if (!sup || !amount) return toast.error('Supplier and amount required');
+    if (!sup || !amount) return toast.error('Party and amount required');
+    if (tds >= Number(amount)) return toast.error('TDS cannot be more than the payment');
     const no = nextNo('PAY', d);
-    insert('payments', { no, date: d, partyType: 'SUPPLIER', partyId: sup, amount: Number(amount) - tds, tds, mode, ref, kind, remark: '' } as any, `Payment ${no} — ${inr(Number(amount))}`, 'Payment');
+    insert('payments', { no, date: d, partyType, partyId: sup, amount: Number(amount) - tds, tds, tdsCode: tds ? rule?.code || 'MANUAL' : undefined, tdsRate: tds ? pct : undefined, mode, ref, kind, remark: '' } as any, `Payment ${no} — ${inr(Number(amount))}`, 'Payment');
     toast.success(`${no} recorded`, `${inr(Number(amount) - tds)} paid · TDS ${inr(tds)}`);
     onClose();
   };
+  const opts = partyType === 'SUPPLIER' ? supplierOpts(db) : db.subcons.filter((x) => x.active !== false).map((x) => ({ value: x.id, label: x.name, hint: x.pan ? `PAN ${x.pan}` : 'no PAN on file' }));
   return (
-    <Drawer open onClose={onClose} title="Record payment" subtitle="full / part / advance; bank, cheque, UPI or cash; TDS if applicable" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save payment</Button></>}>
+    <Drawer open onClose={onClose} title="Record payment" subtitle="Full / part / advance; TDS worked out by your TDS rules" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save payment</Button></>}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Supplier" required className="sm:col-span-2" hint={sup ? `Balance payable ${inr(bal)}` : undefined}>
-          <Combo value={sup} onChange={setSup} options={supplierOpts(db)} />
+        <Field label="Pay to" className="sm:col-span-2"><Segmented value={partyType} onChange={(x) => (setPartyType(x), setSup(''), setTdsPct(''))} options={[{ value: 'SUPPLIER', label: 'Supplier / transporter' }, { value: 'SUBCON', label: 'Sub-contractor' }]} /></Field>
+        <Field label={partyType === 'SUPPLIER' ? 'Supplier' : 'Sub-contractor'} required className="sm:col-span-2" hint={bal ? `Balance payable ${inr(bal)}` : undefined}>
+          <Combo value={sup} onChange={(x) => (setSup(x), setTdsPct(''))} options={opts} />
         </Field>
         <Field label="Date"><Input type="date" value={d} max={today()} onChange={(e) => setD(e.target.value)} /></Field>
         <Field label="Type"><Select value={kind} onChange={setKind} options={[{ value: 'FULL', label: 'Full' }, { value: 'PART', label: 'Part' }, { value: 'ADVANCE', label: 'Advance' }]} /></Field>
-        <Field label="Gross amount" required><NumberInput value={amount} onChange={setAmount} prefix="₹" /></Field>
-        <Field label="TDS %" hint={tds ? `TDS ${inr(tds)} · net ${inr(Number(amount) - tds)}` : 'e.g. 0.1 (194Q) or 1/2 (194C)'}><NumberInput value={tdsPct} onChange={setTdsPct} suffix="%" /></Field>
+        <Field label="Gross amount (before TDS)" required><NumberInput value={amount} onChange={setAmount} prefix="₹" /></Field>
+        <Field label="TDS %" hint={rule ? `${rule.reason}${tds ? ` · TDS ${inr(tds)} · net ${inr(Number(amount) - tds)}` : ''}` : 'Worked out when party and amount are entered'}>
+          <NumberInput value={tdsPct === '' ? pct : tdsPct} onChange={setTdsPct} suffix="%" />
+        </Field>
         <Field label="Mode"><Select value={mode} onChange={setMode} options={['BANK', 'CHEQUE', 'UPI', 'CASH'].map((x) => ({ value: x, label: x }))} /></Field>
         <Field label="Reference / UTR / cheque no."><Input value={ref} onChange={(e) => setRef(e.target.value)} /></Field>
       </div>

@@ -136,7 +136,7 @@ export interface WorkAdvance {
 export interface PriceAdjustment {
   applicable: boolean;
   baseDate: string;
-  components: Array<{ name: string; basePrice: number; unit: string; sharePct: number }>;
+  components: Array<{ name: string; basePrice: number; unit: string; sharePct: number; method?: 'SHARE' | 'QUANTITY' }>;
 }
 
 export type SiteStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
@@ -200,6 +200,9 @@ export interface Site extends Base {
   milestones?: Array<{ date: string; targetPct: number; label: string }>;
   plantId?: ID;
   /** figures up to go-live for running works (PF-06) */
+  completionCertNo?: string;
+  completionCertDate?: string;
+  sdReleasedOn?: string;
   openingWorkDone?: number;
   openingBilled?: number;
   openingReceived?: number;
@@ -288,7 +291,12 @@ export interface Supplier extends Base {
   creditDays: number;
   openingBalance: number;
   kind: 'MATERIAL' | 'FUEL_PUMP' | 'VEHICLE_OWNER' | 'SERVICE';
+  /** TDS (Query 2): entity type, TDS section ('' = none), transporter with ≤10 goods carriages and declaration */
+  entityType?: PartyEntity;
+  tdsCode?: string;
+  transporter10?: boolean;
 }
+export type PartyEntity = 'INDIVIDUAL' | 'HUF' | 'FIRM' | 'LLP' | 'COMPANY' | 'OTHER';
 
 export interface Client extends Base {
   code: string;
@@ -324,6 +332,8 @@ export interface SubContractor extends Base {
   esiNo?: string;
   bocwNo?: string;
   tradeRates: Record<string, number>; // trade -> daily rate (labour contractor)
+  entityType?: PartyEntity;
+  tdsCode?: string;
 }
 
 export type Trade = 'Mason' | 'Helper' | 'Carpenter' | 'Bar Bender' | 'Operator' | 'Driver' | 'Electrician' | 'Supervisor';
@@ -444,6 +454,11 @@ export interface BoqItem extends Base {
   recipeId?: ID;
   isExtra?: boolean;
   approvalRef?: string;
+  /** BIL-01: rate in the department's estimate; `rate` is the contract rate after the tendered % */
+  estRate?: number;
+  /** BIL-04: rate analysis of an extra item */
+  rateAnalysis?: string;
+  approvalDate?: string;
 }
 
 /* ---------------- Inventory (§4, §5) ---------------- */
@@ -566,6 +581,9 @@ export interface Payment extends Base {
   kind: 'FULL' | 'PART' | 'ADVANCE';
   siteId?: ID;
   remark?: string;
+  /** TDS rule applied (section code and rate) */
+  tdsCode?: string;
+  tdsRate?: number;
 }
 
 export interface DebitNote extends Base {
@@ -842,9 +860,36 @@ export interface Measurement extends Base {
   nos: number;
   qty: number;
   mbNo: string;
+  /** BIL-02: a deduction entry (openings, overlaps) — its quantity is subtracted */
+  deduction?: boolean;
+  remarks?: string;
+  photos?: number;
+  /** JE check status */
+  jeStatus?: 'PENDING' | 'CHECKED' | 'QUERY';
+  jeRemark?: string;
+  jeAt?: string;
 }
 
 export type BillStatus = 'DRAFT' | 'SUBMITTED' | 'CERTIFIED' | 'PARTLY_PAID' | 'PAID';
+/** one deduction on a bill, with how it was worked out */
+export interface BillDeduction {
+  code: string;
+  head: string;
+  pct: number;
+  base: number;
+  amount: number;
+  note?: string;
+}
+/** BIL-05: one price adjustment component on a bill */
+export interface PaLine {
+  name: string;
+  method: 'SHARE' | 'QUANTITY';
+  basePrice: number;
+  currentPrice: number;
+  sharePct: number;
+  qty: number;
+  amount: number;
+}
 export interface RaBill extends Base {
   no: string;
   seq: number;
@@ -866,6 +911,84 @@ export interface RaBill extends Base {
   status: BillStatus;
   receipts: Array<{ date: string; amount: number; utr: string }>;
   escalation?: number;
+  /* ---- Phase 2 ---- */
+  kind?: 'RA' | 'FINAL';
+  /** itemised deductions from the work's profile (replaces `deductions` when present) */
+  ded?: BillDeduction[];
+  priceAdj?: PaLine[];
+  firmId?: ID;
+  /** GST tax invoice no. from the firm's series (BIL-08) */
+  invoiceNo?: string;
+  /** BIL-06 tracking */
+  submittedOn?: string;
+  passedOn?: string;
+  passedGross?: number;
+  /** deductions as actually made by the division, per code */
+  actualDed?: Array<{ code: string; amount: number }>;
+  remarks?: string;
+}
+
+/* ---------------- Guarantees and deposits (SEC-01…04) ---------------- */
+export type GuaranteeKind = 'EMD' | 'PS' | 'APS' | 'SD' | 'ADVANCE' | 'OTHER';
+export interface GuaranteeRec extends Base {
+  kind: GuaranteeKind;
+  instrument: 'BG' | 'EBG' | 'FDR' | 'DD' | 'ONLINE' | 'CASH';
+  number: string;
+  bank: string;
+  branch: string;
+  amount: number;
+  issueDate: string;
+  expiryDate: string;
+  claimDate: string;
+  siteId?: ID;
+  tenderRef?: string;
+  beneficiary: string;
+  status: 'ACTIVE' | 'EXTENDED' | 'RELEASED' | 'ENCASHED';
+  /** margin kept with the bank against a BG */
+  marginPct: number;
+  extensions: Array<{ date: string; expiry: string; claim: string; letterNo: string }>;
+  releasedOn?: string;
+  remarks: string;
+}
+export interface BankFacility extends Base {
+  bank: string;
+  branch: string;
+  bgLimit: number;
+  /** default margin % on new BGs */
+  marginPct: number;
+  /** FDRs kept under lien with the bank (other than those in the register) */
+  fdrUnderLien: number;
+  remarks: string;
+}
+
+/* ---------------- Tax credits received (BIL-09) ---------------- */
+export interface TaxCredit extends Base {
+  /** GSTR-7A = GST TDS certificate; AS26 = income-tax TDS in Form 26AS / AIS */
+  kind: 'GSTR7A' | 'AS26';
+  date: string;
+  deductor: string;
+  deductorId: string;
+  amount: number;
+  /** taxable value / amount paid on which it was deducted */
+  base: number;
+  certNo: string;
+  billId?: ID;
+  siteId?: ID;
+}
+
+/* ---------------- TDS on payments we make (Query 2) ---------------- */
+export interface TdsSection {
+  code: string;
+  label: string;
+  /** individual / HUF */
+  rateInd: number;
+  /** firm, LLP, company */
+  rateOther: number;
+  rateNoPan: number;
+  /** TDS applies when one payment is above this … */
+  single: number;
+  /** … or the year's total to the party is above this */
+  annual: number;
 }
 
 /* ---------------- Admin ---------------- */
@@ -923,6 +1046,10 @@ export interface Settings {
   sessionTimeoutMin: number;
   notify: { sms: boolean; whatsapp: boolean; email: boolean };
   overheadBasis: 'EQUAL' | 'CONTRACT' | 'BILLING' | 'MANUAL';
+  /** Query 2: TDS master and on/off per financial year */
+  tds?: { enabledFy: Record<string, boolean>; sections: TdsSection[] };
+  /** ACC-03: Tally company and ledger names */
+  tally?: { company: string; ledgers: Record<string, string> };
 }
 
 export interface AuditEntry {
@@ -998,6 +1125,9 @@ export interface DB {
   stockpiles: StockpileReading[];
   measurements: Measurement[];
   raBills: RaBill[];
+  guarantees: GuaranteeRec[];
+  bankFacilities: BankFacility[];
+  taxCredits: TaxCredit[];
   roles: Role[];
   users: User[];
   settings: Settings;

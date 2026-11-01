@@ -73,10 +73,10 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
     emd: z.object({ ...guarantee, refundDate: optDate }).optional(), perfSecurity: z.object({ ...guarantee, pct: pct.default(0) }).optional(), addlPerfSecurity: z.object(guarantee).optional(),
     sdCeiling: nn.optional(), dlpMonths: z.number().int().min(0).max(120).optional(), deductions: deductions.optional(),
     advances: z.array(z.object({ kind: z.enum(['MOBILISATION', 'MACHINERY', 'SECURED']), amount: nn, interestPct: pct.default(0), recoveryPct: pct.default(0) })).max(10).optional(),
-    priceAdjustment: z.object({ applicable: z.boolean(), baseDate: optDate, components: z.array(z.object({ name: s(60), basePrice: nn, unit: s(20).default(''), sharePct: pct.default(0) })).max(10).default([]) }).optional(),
+    priceAdjustment: z.object({ applicable: z.boolean(), baseDate: optDate, components: z.array(z.object({ name: s(60), basePrice: nn, unit: s(20).default(''), sharePct: pct.default(0), method: z.enum(['SHARE', 'QUANTITY']).optional() })).max(10).default([]) }).optional(),
     ld: z.object({ ratePct: pct, per: z.enum(['DAY', 'WEEK', 'MONTH']).default('WEEK'), maxPct: pct }).optional(),
     milestones: z.array(z.object({ date, targetPct: pct, label: s(120).default('') })).max(30).optional(),
-    plantId: optId, openingWorkDone: nn.optional(), openingBilled: nn.optional(), openingReceived: nn.optional(),
+    plantId: optId, completionCertNo: s(120).optional(), completionCertDate: z.union([date, z.literal('')]).optional(), sdReleasedOn: z.union([date, z.literal('')]).optional(), openingWorkDone: nn.optional(), openingBilled: nn.optional(), openingReceived: nn.optional(),
   }),
   stores: z.object({ ...base, code: s(30), name: s(200), type: z.enum(['CENTRAL', 'SITE', 'PLANT']), siteId: optId, plantId: optId, address: s(500).optional(), holds: s(500).optional() }),
   plants: z.object({
@@ -93,7 +93,7 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
   }),
   suppliers: z.object({
     ...base, code: s(30), name: s(200), gstin: s(15).default(''), pan: s(10).default(''), address: s(400).default(''), contact: s(100).default(''), phone: s(20).default(''), bank: s(200).default(''),
-    materials: s(300).default(''), creditDays: z.number().int().min(0).max(365).default(30), openingBalance: num.default(0), kind: z.enum(['MATERIAL', 'FUEL_PUMP', 'VEHICLE_OWNER', 'SERVICE']).default('MATERIAL'),
+    materials: s(300).default(''), creditDays: z.number().int().min(0).max(365).default(30), openingBalance: num.default(0), kind: z.enum(['MATERIAL', 'FUEL_PUMP', 'VEHICLE_OWNER', 'SERVICE']).default('MATERIAL'), entityType: z.enum(['INDIVIDUAL', 'HUF', 'FIRM', 'LLP', 'COMPANY', 'OTHER']).optional(), tdsCode: s(40).optional(), transporter10: z.boolean().optional(),
   }),
   clients: z.object({
     ...base, code: s(30), name: s(200), gstin: s(15).default(''), address: s(400).default(''), billingContact: s(200).default(''), tdsPct: pct.default(2), retentionPct: pct.default(5), cessPct: pct.default(1),
@@ -104,7 +104,7 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
   subcons: z.object({
     ...base, code: s(30), name: s(200), kind: z.enum(['LABOUR_CONTRACTOR', 'SUB_CONTRACTOR']), pan: s(10).default(''), gstin: s(15).default(''), trade: s(100).default(''),
     rateType: z.enum(['PER_DAY', 'PER_UNIT', 'LUMP_SUM']), bank: s(200).default(''), phone: s(20).default(''), openingBalance: num.default(0), licenceNo: s(60).optional(), licenceExpiry: date.optional(),
-    pfNo: s(40).optional(), esiNo: s(40).optional(), bocwNo: s(40).optional(), tradeRates: rec(nn).default({}),
+    pfNo: s(40).optional(), esiNo: s(40).optional(), bocwNo: s(40).optional(), tradeRates: rec(nn).default({}), entityType: z.enum(['INDIVIDUAL', 'HUF', 'FIRM', 'LLP', 'COMPANY', 'OTHER']).optional(), tdsCode: s(40).optional(),
   }),
   workers: z.object({
     ...base, code: s(30), name: s(200), phone: s(20).default(''), aadhaar: z.string().regex(/^(|XXXX-XXXX-\d{4})$/, 'Aadhaar must be stored masked').default(''), trade, wageRate: nn, otRate: nn.default(0),
@@ -125,7 +125,10 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
     ...base, code: s(30), name: s(200), productId: z.union([id, z.literal('')]), siteId: optId, perUnit: s(10),
     lines: z.array(qtyLine).max(50), split: z.array(z.object({ materialId: id, pct })).max(20).optional(),
   }),
-  boq: z.object({ ...base, siteId: id, itemNo: s(30), description: s(1000), unit: s(10), qty: nn, rate: nn, recipeId: optId, isExtra: z.boolean().optional(), approvalRef: s(200).optional() }),
+  boq: z.object({
+    ...base, siteId: id, itemNo: s(30), description: s(2000), unit: s(20), qty: nn, rate: nn, recipeId: optId, isExtra: z.boolean().optional(), approvalRef: s(200).optional(),
+    estRate: nn.optional(), rateAnalysis: s(4000).optional(), approvalDate: z.union([date, z.literal('')]).optional(),
+  }),
 
   stockTxns: z.object({
     ...base, no: s(60), type: z.enum(['OPENING', 'ISSUE', 'GRN', 'PLANT_RECEIPT', 'CONSUMPTION', 'TRANSFER', 'RETURN', 'WASTAGE', 'ADJUSTMENT']), date,
@@ -149,7 +152,7 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
     status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'SENT_BACK', 'CANCELLED', 'OPEN', 'PARTIAL', 'CLOSED']),
   }),
   invoices: z.object({ ...base, no: s(60), supplierInvoiceNo: s(60), date, supplierId: id, poId: optId, grnIds: z.array(id).max(50), storeId: id, lines: z.array(poLine).min(1).max(100), dueDate: date }),
-  payments: z.object({ ...base, no: s(60), date, partyType: z.enum(['SUPPLIER', 'SUBCON', 'WORKER']), partyId: id, amount: nn, tds: nn.default(0), mode: payMode, ref: s(100).default(''), kind: z.enum(['FULL', 'PART', 'ADVANCE']), siteId: optId, remark: s(500).optional() }),
+  payments: z.object({ ...base, no: s(60), date, partyType: z.enum(['SUPPLIER', 'SUBCON', 'WORKER']), partyId: id, amount: nn, tds: nn.default(0), mode: payMode, ref: s(100).default(''), kind: z.enum(['FULL', 'PART', 'ADVANCE']), siteId: optId, remark: s(500).optional(), tdsCode: s(40).optional(), tdsRate: pct.optional() }),
   debitNotes: z.object({ ...base, no: s(60), date, supplierId: id, grnId: optId, materialId: id, qty: nn, rate: nn, reason: s(500) }),
   attendance: z.object({
     ...base, date, siteId: id, workerId: optId, status: z.enum(['P', 'A', 'H']).optional(), otHours: nn.default(0), contractorId: optId, trade: trade.optional(),
@@ -196,13 +199,30 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
   }),
   plantCosts: z.object({ ...base, plantId: id, month, labour: nn, power: nn, machinery: nn, maintenance: nn, overhead: nn }),
   stockpiles: z.object({ ...base, date, plantId: id, materialId: id, physicalQty: nn }),
-  measurements: z.object({ ...base, date, siteId: id, boqItemId: id, chainage: s(200).default(''), length: nn.default(0), breadth: nn.default(0), depth: nn.default(0), nos: nn.default(0), qty: nn, mbNo: s(60).default('') }),
+  measurements: z.object({
+    ...base, date, siteId: id, boqItemId: id, chainage: s(200).default(''), length: nn.default(0), breadth: nn.default(0), depth: nn.default(0), nos: nn.default(0), qty: nn, mbNo: s(60).default(''),
+    deduction: z.boolean().optional(), remarks: s(500).optional(), photos: z.number().int().min(0).max(50).optional(),
+    jeStatus: z.enum(['PENDING', 'CHECKED', 'QUERY']).optional(), jeRemark: s(500).optional(), jeAt: ts.optional(),
+  }),
   raBills: z.object({
     ...base, no: s(60), seq: z.number().int().min(1), date, siteId: id,
     lines: z.array(z.object({ boqItemId: id, uptoQty: nn, prevQty: nn, thisQty: nn, rate: nn })).max(500), gstPct: pct,
     deductions: z.object({ securityDeposit: nn, retention: nn, tds: nn, cess: nn, gstTds: nn, royalty: nn, advanceRecovery: nn, materialRecovery: nn, penalty: nn }),
-    status: z.enum(['DRAFT', 'SUBMITTED', 'CERTIFIED', 'PARTLY_PAID', 'PAID']), receipts: z.array(z.object({ date, amount: nn, utr: s(60) })).max(100), escalation: nn.optional(),
+    status: z.enum(['DRAFT', 'SUBMITTED', 'CERTIFIED', 'PARTLY_PAID', 'PAID']), receipts: z.array(z.object({ date, amount: nn, utr: s(60) })).max(100), escalation: num.optional(),
+    kind: z.enum(['RA', 'FINAL']).optional(), firmId: optId, invoiceNo: s(60).optional(),
+    ded: z.array(z.object({ code: s(80), head: s(120), pct: num, base: num, amount: nn, note: s(200).optional() })).max(60).optional(),
+    priceAdj: z.array(z.object({ name: s(60), method: z.enum(['SHARE', 'QUANTITY']), basePrice: nn, currentPrice: nn, sharePct: pct, qty: nn, amount: num })).max(10).optional(),
+    submittedOn: z.union([date, z.literal('')]).optional(), passedOn: z.union([date, z.literal('')]).optional(), passedGross: nn.optional(),
+    actualDed: z.array(z.object({ code: s(80), amount: nn })).max(60).optional(), remarks: s(1000).optional(),
   }),
+  guarantees: z.object({
+    ...base, kind: z.enum(['EMD', 'PS', 'APS', 'SD', 'ADVANCE', 'OTHER']), instrument: z.enum(['BG', 'EBG', 'FDR', 'DD', 'ONLINE', 'CASH']), number: s(80).default(''), bank: s(120).default(''), branch: s(120).default(''),
+    amount: nn, issueDate: optDate, expiryDate: optDate, claimDate: optDate, siteId: optId, tenderRef: s(200).optional(), beneficiary: s(200).default(''),
+    status: z.enum(['ACTIVE', 'EXTENDED', 'RELEASED', 'ENCASHED']).default('ACTIVE'), marginPct: pct.default(0),
+    extensions: z.array(z.object({ date, expiry: date, claim: optDate, letterNo: s(120).default('') })).max(30).default([]), releasedOn: z.union([date, z.literal('')]).optional(), remarks: s(500).default(''),
+  }),
+  bankFacilities: z.object({ ...base, bank: s(120), branch: s(120).default(''), bgLimit: nn, marginPct: pct.default(0), fdrUnderLien: nn.default(0), remarks: s(500).default('') }),
+  taxCredits: z.object({ ...base, kind: z.enum(['GSTR7A', 'AS26']), date, deductor: s(200).default(''), deductorId: s(20).default(''), amount: nn, base: nn.default(0), certNo: s(80).default(''), billId: optId, siteId: optId }),
   roles: z.object({
     id, name: s(100), description: s(300).default(''),
     perms: rec(z.array(z.enum(['view', 'add', 'edit', 'delete', 'approve'])).max(5)),
@@ -228,6 +248,11 @@ export const settingsSchema = z.object({
   sessionTimeoutMin: z.number().int().min(5).max(24 * 60),
   notify: z.object({ sms: z.boolean(), whatsapp: z.boolean(), email: z.boolean() }).partial(),
   overheadBasis: z.enum(['EQUAL', 'CONTRACT', 'BILLING', 'MANUAL']),
+  tds: z.object({
+    enabledFy: rec(z.boolean()),
+    sections: z.array(z.object({ code: s(40), label: s(200), rateInd: pct, rateOther: pct, rateNoPan: pct, single: nn, annual: nn })).max(30),
+  }),
+  tally: z.object({ company: s(200), ledgers: rec(s(200)) }),
 }).partial();
 
 export const companySchema = z.object({

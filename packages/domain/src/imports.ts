@@ -318,8 +318,10 @@ export const TEMPLATES: ImportTemplate[] = [
       { header: 'Description', key: 'description', required: true },
       { header: 'Unit', key: 'unit', required: true },
       { header: 'Quantity', key: 'qty', type: 'number', required: true },
-      { header: 'Rate', key: 'rate', type: 'number', required: true },
+      { header: 'Estimate rate', key: 'estRate', type: 'number', hint: "Department's rate — the tendered % of the work is applied" },
+      { header: 'Rate', key: 'rate', type: 'number', hint: 'Contract rate; leave blank to work it out from the estimate rate' },
     ],
+    defaults: { rate: 0 },
     rows: (db) => db.boq,
     toOps: (db, rows, errors) => {
       const seen = new Set(db.boq.map((b) => `${b.siteId}|${norm(b.itemNo)}`));
@@ -327,11 +329,29 @@ export const TEMPLATES: ImportTemplate[] = [
       for (const r of rows) {
         const k = `${r.rec.siteId}|${norm(r.rec.itemNo)}`;
         if (seen.has(k)) errors.push({ row: r.row, column: 'Item no.', message: `Item ${r.rec.itemNo} already exists for this work` });
+        if (!(r.rec.rate > 0) && !(r.rec.estRate > 0)) errors.push({ row: r.row, column: 'Rate', message: 'Give the rate or the estimate rate' });
         seen.add(k);
         ops.push({ row: r.row, kind: 'insert', coll: 'boq', rec: r.rec });
       }
       return ops;
     },
+  },
+  {
+    id: 'tax-credits',
+    title: 'Tax credits',
+    coll: 'taxCredits',
+    adminOnly: true,
+    description: 'GST TDS from GSTR-7A certificates and income-tax TDS from Form 26AS / AIS, one row per credit. They are matched with your bills in Contracts › Tax & Tally.',
+    columns: [
+      { header: 'Type', key: 'kind', type: 'enum', required: true, options: opts(['GSTR7A', 'GST TDS (GSTR-7A)'], ['AS26', 'Income-tax TDS (26AS / AIS)']) },
+      { header: 'Date', key: 'date', type: 'date', required: true },
+      { header: 'Deductor', key: 'deductor', hint: 'e.g. EE, PWD (R&B) Dharmanagar Division' },
+      { header: 'Deductor GSTIN / TAN', key: 'deductorId' },
+      { header: 'Taxable value / amount paid', key: 'base', type: 'number' },
+      { header: 'Tax credited', key: 'amount', type: 'number', required: true },
+      { header: 'Certificate / reference no.', key: 'certNo' },
+    ],
+    rows: (db) => db.taxCredits,
   },
   {
     id: 'opening-stock',

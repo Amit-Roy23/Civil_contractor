@@ -8,6 +8,7 @@ import { daysBetween, fyCode } from './format.js';
 import { round, sum } from './utils.js';
 import { clientDeductions, stageStatus, timeAllowedMonths } from './works.js';
 import { templateById, type ImportOp } from './imports.js';
+import { billLines, billTotals, computeDeductions, contractRate, invoiceKey, invoiceNo, legacyDeductions, measureQty, measuredUpto, priceAdjustment, tdsFor } from './billing.js';
 
 /**
  * Server-authoritative business rules. Every change from the web app arrives as a Command;
@@ -74,12 +75,12 @@ const MODULE: Record<CollectionKey, ModuleKey> = {
   imprests: 'expenses', expenses: 'expenses', overheads: 'expenses',
   fuelPurchases: 'fleet', fuelIssues: 'fleet', dips: 'fleet', logs: 'fleet', jobCards: 'fleet', tyres: 'fleet',
   production: 'plant', dispatches: 'plant', plantCosts: 'plant', stockpiles: 'plant',
-  measurements: 'contract', raBills: 'contract',
+  measurements: 'contract', raBills: 'contract', guarantees: 'contract', bankFacilities: 'contract', taxCredits: 'contract',
   roles: 'admin', users: 'admin', audit: 'admin', notifications: 'dashboard',
 };
 
 /** entries that carry money only — need rate visibility (ROLE-03) */
-const MONEY: CollectionKey[] = ['pos', 'quotations', 'invoices', 'payments', 'debitNotes', 'overheads', 'plantCosts', 'raBills', 'workOrders', 'fuelPurchases'];
+const MONEY: CollectionKey[] = ['pos', 'quotations', 'invoices', 'payments', 'debitNotes', 'overheads', 'plantCosts', 'raBills', 'workOrders', 'fuelPurchases', 'guarantees', 'bankFacilities', 'taxCredits'];
 
 const STOCK_PREFIX: Record<string, string> = { OPENING: 'OPN', ISSUE: 'MIN', GRN: 'GRN', PLANT_RECEIPT: 'PRC', CONSUMPTION: 'CON', TRANSFER: 'TRF', RETURN: 'RTN', WASTAGE: 'WST', ADJUSTMENT: 'ADJ' };
 const SIMPLE_PREFIX: Partial<Record<CollectionKey, string>> = { requisitions: 'REQ', quotations: 'QTN', pos: 'PO', invoices: 'PINV', payments: 'PAY', debitNotes: 'DN', wageRuns: 'WAGE', workOrders: 'WO', subconBills: 'SCB', imprests: 'IMP', expenses: 'EXP', fuelPurchases: 'FPR', fuelIssues: 'FIS', jobCards: 'JC' };
@@ -156,7 +157,7 @@ function serverOwned(coll: CollectionKey, raw: Record<string, unknown>): Record<
   const out: Record<string, unknown> = { no: 'NEW' };
   if (INITIAL_STATUS[coll]) out.status = INITIAL_STATUS[coll];
   if (coll === 'wageRuns') out.lines = [];
-  if (coll === 'raBills') Object.assign(out, { seq: 1, receipts: [], gstPct: 0, lines: [], deductions: {} });
+  if (coll === 'raBills') Object.assign(out, { seq: 1, receipts: [], gstPct: 0, lines: [], deductions: { securityDeposit: 0, retention: 0, tds: 0, cess: 0, gstTds: 0, royalty: 0, advanceRecovery: 0, materialRecovery: 0, penalty: 0 } });
   if (coll === 'production') Object.assign(out, { productId: 'pending', runHours: 0 });
   return out;
 }
@@ -207,9 +208,14 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
         need(!!find(db, 'roles', r.roleId), 'Unknown role');
       }
       break;
-    case 'boq':
-      need(!!find(db, 'sites', r.siteId) && s.seesSite(r.siteId), 'Site not in your access');
+    case 'boq': {
+      const site = find(db, 'sites', r.siteId);
+      need(site && s.seesSite(r.siteId), 'Site not in your access');
+      need(!db.boq.some((b) => b.siteId === r.siteId && b.itemNo.trim().toLowerCase() === String(r.itemNo).trim().toLowerCase()), `Item ${r.itemNo} already exists in this work's BOQ`, 409);
+      // BIL-01: contract rate = estimate rate with the tendered % applied
+      if (r.estRate > 0 && !(r.rate > 0)) r.rate = contractRate(site, r.estRate);
       break;
+    }
     case 'stockTxns':
       insertStockTxn(ctx, out, r);
       break;
@@ -255,6 +261,19 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
       need(r.partyType === 'SUPPLIER' ? !!find(db, 'suppliers', r.partyId) : r.partyType === 'SUBCON' ? !!find(db, 'subcons', r.partyId) : !!find(db, 'workers', r.partyId), 'Unknown party');
       need(r.amount > 0, 'Amount must be more than zero');
       backdated(ctx, r.date);
+      {
+        // Query 2: TDS on payments to contractors and transporters, unless entered by hand
+        // `amount` is what is paid; TDS is on top. When TDS is not entered, `amount` is taken as the gross due.
+        if (raw.tds === undefined || raw.tds === null) {
+          const rule = tdsFor(db, r.partyType, r.partyId, r.amount, r.date);
+          r.tds = rule.tds;
+          r.amount = round(r.amount - rule.tds, 2);
+          r.tdsCode = r.tdsCode || rule.code || undefined;
+          r.tdsRate = r.tdsRate ?? (rule.code ? rule.rate : undefined);
+        }
+        need(r.amount > 0, 'Amount after TDS must be more than zero');
+
+      }
       r.no = allocate(ctx, out, 'PAY', r.date);
       break;
     case 'debitNotes':
@@ -428,33 +447,65 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
     case 'measurements': {
       need(s.seesSite(r.siteId), 'Site not in your access', 403);
       need(find(db, 'boq', r.boqItemId)?.siteId === r.siteId, 'BOQ item does not belong to this site');
+      // BIL-02: quantity is nos × L × B × D when dimensions are given
+      const q = measureQty(r);
+      if (q !== null) r.qty = q;
       need(r.qty > 0, 'Quantity must be more than zero');
       need(r.date <= ctx.today, 'Future dates are not allowed');
+      if (r.deduction) need(measuredUpto(db, r.boqItemId, '9999-12-31') - r.qty >= -1e-6, 'This deduction is more than the quantity measured for the item');
+      r.jeStatus = 'PENDING';
       break;
     }
     case 'raBills': {
       const site = find(db, 'sites', r.siteId);
       need(site && s.seesSite(site.id), 'Site not in your access', 403);
-      const prev = db.raBills.filter((b) => b.siteId === r.siteId).sort((a, b) => a.date.localeCompare(b.date));
-      const last = prev[prev.length - 1];
+      const prev = db.raBills.filter((b) => b.siteId === r.siteId).sort((a, b) => a.seq - b.seq);
+      const last = prev.at(-1);
       need(!last || last.date <= r.date, 'Bill date is before the previous bill');
-      // abstract is always rebuilt from the measurement book (BIL-01)
-      r.lines = db.boq
-        .filter((b) => b.siteId === r.siteId)
-        .map((b) => {
-          const prevQty = last?.lines.find((l) => l.boqItemId === b.id)?.uptoQty || 0;
-          const upto = sum(db.measurements.filter((m) => m.boqItemId === b.id && m.date <= r.date), (m) => m.qty);
-          return { boqItemId: b.id, uptoQty: round(upto, 2), prevQty: round(prevQty, 2), thisQty: round(Math.max(0, upto - prevQty), 2), rate: b.rate };
-        })
-        .filter((l) => l.uptoQty > 0);
-      need(sum(r.lines, (l: any) => l.thisQty) > 0, 'No new measured work since the last bill');
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      need(!prev.some((b) => b.kind === 'FINAL'), 'The final bill of this work has already been made');
+      r.kind = raw.kind === 'FINAL' ? 'FINAL' : 'RA';
+      // BIL-01/03: the abstract is always rebuilt from the measurement book (queried entries left out)
+      r.lines = billLines(db, r.siteId, r.date);
+      const work = sum(r.lines, (l: any) => l.thisQty * l.rate);
+      need(work > 0 || r.kind === 'FINAL', 'No new measured work since the last bill');
       r.seq = prev.length + 1;
-      r.no = `${site.code}/RA-${String(r.seq).padStart(2, '0')}`;
-      r.status = 'SUBMITTED';
-      r.receipts = [];
+      r.no = `${site.code}/RA-${String(r.seq).padStart(2, '0')}${r.kind === 'FINAL' ? '-FINAL' : ''}`;
       r.gstPct = site.gstPct;
+      // BIL-05 price adjustment from this bill's current prices
+      const paIn = Array.isArray(raw.paInputs) ? (raw.paInputs as any[]).map((x) => ({ name: String(x?.name || ''), currentPrice: Number(x?.currentPrice) || 0, qty: Number(x?.qty) || 0 })) : [];
+      r.priceAdj = priceAdjustment(site, work, paIn);
+      r.escalation = sum(r.priceAdj, (x: any) => x.amount) || undefined;
+      const gross = work + (r.escalation || 0);
+      const gst = (gross * r.gstPct) / 100;
+      const m = (raw.manual || {}) as any;
+      const n = (x: unknown) => Math.max(0, Number(x) || 0);
+      r.ded = computeDeductions(db, site, gross, gst, r.seq, { materialRecovery: n(m.materialRecovery), penalty: n(m.penalty), interest: n(m.interest), fixed: Object.fromEntries(Object.entries(m.fixed || {}).map(([k, v]) => [k, n(v)])) });
+      r.deductions = legacyDeductions(r.ded);
+      r.firmId = site.firmId || db.firms[0]?.id;
+      r.receipts = [];
+      r.actualDed = undefined;
+      r.passedOn = undefined;
+      r.passedGross = undefined;
+      if (raw.status === 'DRAFT') r.status = 'DRAFT';
+      else submitBill(ctx, out, r);
+      if (r.kind === 'FINAL') stageTo(ctx, out, site, 'FINAL_BILL_SUBMITTED');
       break;
     }
+    case 'guarantees':
+      need(r.amount > 0, 'Amount must be more than zero');
+      if (r.siteId) need(s.seesSite(r.siteId), 'Work not in your access', 403);
+      need(!r.expiryDate || !r.issueDate || r.expiryDate >= r.issueDate, 'Expiry date is before the issue date');
+      r.status = 'ACTIVE';
+      r.extensions = [];
+      break;
+    case 'bankFacilities':
+      need(String(r.bank).trim(), 'Bank name is required');
+      break;
+    case 'taxCredits':
+      need(r.amount > 0, 'Amount must be more than zero');
+      if (r.billId) need(!!find(db, 'raBills', r.billId), 'Unknown bill');
+      break;
   }
 
   out.db = put(out.db, coll, r);
@@ -512,6 +563,33 @@ function importRows(ctx: Ctx, templateId: string, ops: ImportOp[]): Result {
   }
   audit.push({ action: 'CREATE', entity: 'Import', entityId: templateId, label: `Excel import: ${ops.length} ${t!.title.toLowerCase()} rows` });
   return { db, changes, audit, record: { imported: ops.length } };
+}
+
+/** BIL-08: a submitted bill gets the next tax invoice number of its firm's series */
+function submitBill(ctx: Ctx, out: Result, r: any, on?: string) {
+  r.status = 'SUBMITTED';
+  r.submittedOn = on || r.submittedOn || r.date;
+  if (r.invoiceNo) return;
+  const firm = find(out.db, 'firms', r.firmId);
+  const prefix = firm?.invoicePrefix || (firm ? `${firm.code}/INV` : 'INV');
+  const key = invoiceKey(prefix, r.date);
+  const n = (out.db.seq[key] || 0) + 1;
+  out.db = { ...out.db, seq: { ...out.db.seq, [key]: n } };
+  out.changes.push({ single: 'seq', value: out.db.seq });
+  r.invoiceNo = invoiceNo(prefix, r.date, n);
+  void ctx;
+}
+
+/** move a work forward to a stage (never backwards) */
+const STAGE_ORDER = ['BID_SUBMITTED', 'LOA_RECEIVED', 'AGREEMENT_SIGNED', 'IN_PROGRESS', 'STOPPED', 'PHYSICALLY_COMPLETE', 'FINAL_BILL_SUBMITTED', 'FINAL_BILL_PAID', 'DLP', 'SECURITY_RELEASED', 'CLOSED'];
+function stageTo(ctx: Ctx, out: Result, site: any, stage: string) {
+  const cur = out.db.sites.find((x) => x.id === site.id) || site;
+  if (STAGE_ORDER.indexOf(cur.stage || 'IN_PROGRESS') >= STAGE_ORDER.indexOf(stage)) return;
+  const after = { ...cur, stage, status: stageStatus(stage as any) };
+  out.db = put(out.db, 'sites', after);
+  out.changes.push({ coll: 'sites', id: after.id, rec: after });
+  out.audit.push({ action: 'UPDATE', entity: 'sites', entityId: after.id, label: `${cur.short}: status → ${stage.replace(/_/g, ' ').toLowerCase()}`, before: { stage: cur.stage }, after: { stage } });
+  void ctx;
 }
 
 /** works master (Query 1): firm, work code, deductions profile and status from stage */
@@ -704,6 +782,8 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
     after.createdAt = before.createdAt;
     after.createdBy = before.createdBy;
     checkRefs(db, coll, after);
+    // BIL-01: a changed estimate rate gives a new contract rate unless a rate was entered
+    if (coll === 'boq' && 'estRate' in patch && !('rate' in patch) && after.estRate > 0) after.rate = contractRate(find(db, 'sites', after.siteId), after.estRate);
     if (coll === 'sites') {
       syncStage(after, before);
       if (after.firmId) need(!!find(db, 'firms', after.firmId), 'Unknown firm');
@@ -799,20 +879,67 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
         after.createdBy = before.createdBy;
         break;
       case 'raBills': {
-        only(['status', 'receipts']);
+        only(['status', 'receipts', 'passedOn', 'passedGross', 'actualDed', 'remarks', 'submittedOn']);
         requirePerm(s, 'contract', 'edit');
         need(s.showRates, 'Your role cannot see bill amounts', 403);
-        const next: Record<string, string> = { DRAFT: 'SUBMITTED', SUBMITTED: 'CERTIFIED' };
-        if ('receipts' in patch) {
-          need(['CERTIFIED', 'PARTLY_PAID'].includes(before.status), 'Receipts can be recorded on certified bills');
+        after = { ...before };
+        if ('remarks' in patch) after.remarks = String(patch.remarks || '').slice(0, 1000);
+        if (patch.status === 'SUBMITTED') {
+          need(before.status === 'DRAFT', 'Only a draft can be submitted');
+          const on = String(patch.submittedOn || ctx.today);
+          need(on <= ctx.today && on >= before.date, 'Submission date must be between the bill date and today');
+          submitBill(ctx, out, after, on);
+        } else if (patch.status === 'CERTIFIED' || 'passedOn' in patch || 'actualDed' in patch || 'passedGross' in patch) {
+          // BIL-06: the division passes the bill — record its date, passed value and actual deductions
+          if (patch.status === 'CERTIFIED') need(before.status === 'SUBMITTED', 'Only a submitted bill can be marked passed');
+          else need(['CERTIFIED', 'PARTLY_PAID', 'PAID'].includes(before.status), 'Record the passing details when the bill is passed');
+          const p2 = schemas.raBills.parse({ ...before, passedOn: patch.passedOn ?? before.passedOn, passedGross: patch.passedGross ?? before.passedGross, actualDed: patch.actualDed ?? before.actualDed });
+          need(p2.passedOn, 'Passed date is required');
+          need(p2.passedOn <= ctx.today && p2.passedOn >= (before.submittedOn || before.date), 'Passed date must be between submission and today');
+          after = { ...after, passedOn: p2.passedOn, passedGross: p2.passedGross || undefined, actualDed: p2.actualDed, status: patch.status === 'CERTIFIED' ? 'CERTIFIED' : before.status };
+          if (before.receipts.length) {
+            const t2 = billTotals(after);
+            after.status = t2.received >= t2.net - 1 ? 'PAID' : 'PARTLY_PAID';
+          }
+        } else if ('receipts' in patch) {
+          need(['CERTIFIED', 'PARTLY_PAID'].includes(before.status), 'Receipts can be recorded on passed bills');
           const receipts = schemas.raBills.parse({ ...before, receipts: patch.receipts }).receipts;
           need(receipts.length >= before.receipts.length && receipts.slice(0, before.receipts.length).every((r: any, i: number) => r.amount === before.receipts[i].amount && r.utr === before.receipts[i].utr), 'Earlier receipts cannot be changed');
-          const c = billNet(before);
-          const received = sum(receipts, (r: any) => r.amount);
-          after = { ...before, receipts, status: received >= c - 1 ? 'PAID' : 'PARTLY_PAID' };
-        } else {
-          need(next[before.status] === patch.status, 'Status change not allowed');
-          after = { ...before, status: patch.status };
+          need(receipts.every((r: any) => r.date <= ctx.today), 'Receipt date cannot be in the future');
+          after = { ...after, receipts };
+          const t2 = billTotals(after);
+          after.status = t2.received >= t2.net - 1 ? 'PAID' : 'PARTLY_PAID';
+        } else if (!('remarks' in patch)) fail('Status change not allowed');
+        if (after.kind === 'FINAL' && after.status === 'PAID') stageTo(ctx, out, find(db, 'sites', before.siteId), 'FINAL_BILL_PAID');
+        break;
+      }
+      case 'measurements':
+        // the JE's check of a measurement (BIL-02)
+        only(['jeStatus', 'jeRemark']);
+        need(s.can('contract', 'edit') || s.can('contract', 'approve'), 'Your role cannot record the JE check', 403);
+        need(['PENDING', 'CHECKED', 'QUERY'].includes(String(patch.jeStatus ?? before.jeStatus ?? 'PENDING')), 'Unknown check status');
+        if (patch.jeStatus === 'QUERY') need(String(patch.jeRemark || '').trim(), 'Write the JE\'s query');
+        after = { ...before, jeStatus: patch.jeStatus ?? before.jeStatus, jeRemark: String(patch.jeRemark ?? before.jeRemark ?? '').slice(0, 500) || undefined, jeAt: ctx.now };
+        break;
+      case 'guarantees':
+      case 'bankFacilities':
+      case 'taxCredits': {
+        requirePerm(s, 'contract', 'edit');
+        need(s.showRates, 'Your role cannot see guarantees and tax credits', 403);
+        after = parse(coll, { ...before, ...patch });
+        after.createdAt = before.createdAt;
+        after.createdBy = before.createdBy;
+        if (coll === 'guarantees') {
+          need(after.extensions.length >= before.extensions.length, 'Earlier extensions cannot be removed');
+          const ext = after.extensions.at(-1);
+          if (after.extensions.length > before.extensions.length && ext) {
+            need(ext.expiry > (before.expiryDate || ''), 'The extended validity must be after the current expiry');
+            after.expiryDate = ext.expiry;
+            if (ext.claim) after.claimDate = ext.claim;
+            after.status = 'EXTENDED';
+          }
+          if (after.status === 'RELEASED' || after.status === 'ENCASHED') need(after.releasedOn, 'Date of release / encashment is required');
+          if (after.siteId) need(s.seesSite(after.siteId), 'Work not in your access', 403);
         }
         break;
       }
@@ -846,11 +973,6 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
   return out;
 }
 
-function billNet(b: any) {
-  const gross = sum(b.lines, (l: any) => l.thisQty * l.rate) + (b.escalation || 0);
-  const gst = (gross * b.gstPct) / 100;
-  return gross + gst - sum(Object.values(b.deductions) as number[], (x) => x);
-}
 
 /* ================= DECIDE (APR-01/02) ================= */
 
