@@ -1,3 +1,4 @@
+import { vehicleLabel, vehicleName } from '@civil/domain/works';
 import { useMemo, useState } from 'react';
 import { CircleCheck, Droplets, FileWarning, Fuel, Gauge, Plus, Route, Truck, Wrench } from 'lucide-react';
 import { useDB, insert, update, nextNo } from '../../data/store';
@@ -17,7 +18,7 @@ export default function Fleet() {
   const { tab, tabsEl } = useModuleTab('fleet');
   return (
     <div>
-      <PageHeader title="Vehicles & machinery" subtitle="Where each machine worked, the fuel it took and should have taken, what it cost, and when its papers and services are due." tags={['FUEL-01…10', 'VEH-01…05', 'HIRE', 'MNT', 'DOC']} />
+      <PageHeader title="Vehicles & machinery" subtitle="Where each machine worked, the fuel it took and should have taken, what it cost, and when its papers and services are due." />
       {tabsEl}
       {tab === 'overview' && <OverviewTab />}
       {tab === 'fuel' && <FuelTab />}
@@ -32,7 +33,7 @@ export default function Fleet() {
   );
 }
 
-const vehicleOpts = (vs: Vehicle[]) => vs.map((v) => ({ value: v.id, label: `${v.code} — ${v.regNo}`, hint: `${v.type} · ${v.make} ${v.model}${v.ownership === 'HIRED' ? ' · hired' : ''}` }));
+const vehicleOpts = (vs: Vehicle[]) => vs.map((v) => ({ value: v.id, label: vehicleLabel(v), hint: `${v.type} · ${v.make} ${v.model}${v.ownership === 'HIRED' ? ' · hired' : ''}` }));
 const unitOf = (v?: Vehicle) => (v?.meterType === 'HOURS' ? 'hrs' : 'km');
 
 function useVehicles() {
@@ -75,7 +76,7 @@ function OverviewTab() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-semibold">{v.code}</span>
+                    <span className="font-semibold">{vehicleName(v)}</span>
                     <StatusBadge status={v.status} />
                     {v.ownership === 'HIRED' && <Badge tone="violet">Hired</Badge>}
                   </div>
@@ -88,7 +89,7 @@ function OverviewTab() {
                 <div><div className="text-muted">Site</div><div className="font-semibold truncate">{n.site(v.siteId)}</div></div>
               </div>
               <div className="flex flex-wrap gap-1 mt-3">
-                {sv && sv.status !== 'OK' && <Badge tone={sv.status === 'OVERDUE' ? 'bad' : 'warn'}>Service {sv.status.toLowerCase()}</Badge>}
+                {sv && (sv.status === 'OVERDUE' || sv.status === 'DUE SOON') && <Badge tone={sv.status === 'OVERDUE' ? 'bad' : 'warn'}>Service {sv.status.toLowerCase()}</Badge>}
                 {(docs[v.id] || []).slice(0, 2).map((d) => <Badge key={d.type} tone={d.days < 0 ? 'bad' : 'warn'}>{d.type} {d.days < 0 ? 'expired' : `${d.days}d`}</Badge>)}
               </div>
             </Card>
@@ -110,10 +111,10 @@ function VehicleDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const sv = serviceDue(db).find((x) => x.vehicleId === id)!;
   const [st, setSt] = useState(v.status);
   return (
-    <Drawer open onClose={onClose} title={`${v.code} · ${v.regNo}`} subtitle={`${v.type} · ${v.make} ${v.model} (${v.year}) · ${v.ownership === 'HIRED' ? `hired from ${v.ownerName}` : 'owned'}`} width="max-w-3xl">
+    <Drawer open onClose={onClose} title={vehicleLabel(v)} subtitle={`${v.type} · ${v.make} ${v.model} (${v.year}) · ${v.ownership === 'HIRED' ? `hired from ${v.ownerName}` : 'owned'}`} width="max-w-3xl">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center gap-2">
-          <Segmented value={st} onChange={(x) => (setSt(x), update('vehicles', v.id, { status: x }, `${v.code} status → ${x}`, 'Vehicle'), toast.success('Status updated'))} options={[{ value: 'WORKING', label: 'Working' }, { value: 'IDLE', label: 'Idle' }, { value: 'BREAKDOWN', label: 'Breakdown' }]} />
+          <Segmented value={st} onChange={(x) => (setSt(x), update('vehicles', v.id, { status: x }, `${vehicleName(v)} status → ${x}`, 'Vehicle'), toast.success('Status updated'))} options={[{ value: 'WORKING', label: 'Working' }, { value: 'IDLE', label: 'Idle' }, { value: 'BREAKDOWN', label: 'Breakdown' }]} />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card className="p-3"><div className="text-[11px] text-muted">Meter</div><div className="font-bold num">{num(vehicleMeter(db, id))} {unitOf(v)}</div></Card>
@@ -126,8 +127,8 @@ function VehicleDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             <LineChart data={fills.map((f) => ({ label: dateShort(f.to), values: { a: f.actual } }))} series={[{ key: 'a', label: 'Actual' }]} height={170} format={(x) => x.toFixed(1)} refLine={{ value: fills[0]!.standard, label: `Standard ${fills[0]!.standard}` }} />
           </Section>
         )}
-        <KV items={[['Driver / operator', v.driver], ['Site', n.site(v.siteId)], ['Fuel / tank', `${v.fuelType} · ${v.tankCapacity} L`], ['Standard', v.meterType === 'HOURS' ? `${v.stdLph} LPH` : `${v.stdKmpl} KMPL`], ['Hire terms', v.ownership === 'HIRED' ? `₹${v.hireRate} ${v.hireBasis?.replace('PER_', 'per ').toLowerCase()}${v.minGuaranteedHours ? `, min ${v.minGuaranteedHours} h/month` : ''}${v.hireWithFuel ? ', with fuel' : ', without fuel'}` : '—'], ['Internal hire rate (VEH-05)', s.showRates ? `₹${v.internalRate} per ${unitOf(v).replace('s', '')}` : '••••']]} />
-        <Section title="Documents (DOC-01)">
+        <KV items={[['Driver / operator', v.driver], ['Site', n.site(v.siteId)], ['Fuel / tank', `${v.fuelType} · ${v.tankCapacity} L`], ['Standard', v.meterType === 'HOURS' ? `${v.stdLph} LPH` : `${v.stdKmpl} KMPL`], ['Hire terms', v.ownership === 'HIRED' ? `₹${v.hireRate} ${v.hireBasis?.replace('PER_', 'per ').toLowerCase()}${v.minGuaranteedHours ? `, min ${v.minGuaranteedHours} h/month` : ''}${v.hireWithFuel ? ', with fuel' : ', without fuel'}` : '—'], ['Internal hire rate', s.showRates ? `₹${v.internalRate} per ${unitOf(v).replace('s', '')}` : '••••']]} />
+        <Section title="Documents">
           <div className="rounded-xl border border-line divide-y divide-line">
             {v.docs.map((d) => {
               const days = daysBetween(today(), d.expiry);
@@ -145,7 +146,7 @@ function VehicleDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-/* ================= Fuel issue (FUEL-04/05/06) ================= */
+/* ================= Fuel issue ================= */
 function FuelTab() {
   const db = useDB();
   const s = useSession();
@@ -214,12 +215,12 @@ function FuelForm({ onClose }: { onClose: () => void }) {
     if (Number(litres) > v.tankCapacity * 1.05) return toast.error(`More than tank capacity (${v.tankCapacity} L)`);
     const status: FuelIssue['status'] = warn || rule.needsApproval || amount > db.settings.approvalLimits.fuel ? 'PENDING' : 'APPROVED';
     const no = nextNo('FIS', d);
-    insert('fuelIssues', { no, date: d, time, vehicleId: vid, driver: v.driver, siteId: site, sourceId: src, litres: Number(litres), rate: Number(rate), odometer: v.meterType !== 'HOURS' ? Number(reading) : undefined, hourMeter: v.meterType === 'HOURS' ? Number(reading) : undefined, fullTank: full, slipPhoto: photos > 0, meterPhoto: photos > 1, status, flag: warn || undefined } as any, `Fuel issue ${no} ${v.code} ${litres} L`, 'Fuel issue');
-    toast[warn ? 'warn' : 'success'](`${no} saved`, warn ? `Flagged: ${warn} (FUEL-06)` : source?.type === 'OUTSIDE_PUMP' ? `Posted to ${lk.supplier[source.supplierId!]?.name} credit ledger (FUEL-05)` : 'Fuel tank stock reduced');
+    insert('fuelIssues', { no, date: d, time, vehicleId: vid, driver: v.driver, siteId: site, sourceId: src, litres: Number(litres), rate: Number(rate), odometer: v.meterType !== 'HOURS' ? Number(reading) : undefined, hourMeter: v.meterType === 'HOURS' ? Number(reading) : undefined, fullTank: full, slipPhoto: photos > 0, meterPhoto: photos > 1, status, flag: warn || undefined } as any, `Fuel issue ${no} ${vehicleName(v)} ${litres} L`, 'Fuel issue');
+    toast[warn ? 'warn' : 'success'](`${no} saved`, warn ? `Flagged: ${warn}` : source?.type === 'OUTSIDE_PUMP' ? `Posted to ${lk.supplier[source.supplierId!]?.name} credit ledger` : 'Fuel tank stock reduced');
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Fuel load" subtitle="FUEL-04 · reading must be more than the last one; odd jumps are flagged" footer={<><span className="mr-auto text-sm">Amount <b><Money v={amount} /></b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
+    <Drawer open onClose={onClose} title="Fuel load" subtitle="reading must be more than the last one; odd jumps are flagged" footer={<><span className="mr-auto text-sm">Amount <b><Money v={amount} /></b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
       <div className="space-y-4">
         <Field label="Vehicle / machine" required><Combo value={vid} onChange={pick} options={vehicleOpts(vs)} /></Field>
         {v && <Callout>Driver <b>{v.driver}</b> · tank {v.tankCapacity} L · standard {v.meterType === 'HOURS' ? `${v.stdLph} LPH` : `${v.stdKmpl} KMPL`} · last reading <b>{num(last, 1)} {unitOf(v)}</b></Callout>}
@@ -227,14 +228,14 @@ function FuelForm({ onClose }: { onClose: () => void }) {
           <Field label="Date" required><Input type="date" value={d} max={today()} onChange={(e) => setD(e.target.value)} /></Field>
           <Field label="Time"><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>
           <Field label="Site where it is working" required><Select value={site} onChange={setSite} options={db.sites.filter((x) => s.seesSite(x.id)).map((x) => ({ value: x.id, label: x.short }))} /></Field>
-          <Field label="Fuel source" required><Select value={src} onChange={setSrc} options={db.fuelSources.map((f) => ({ value: f.id, label: `${f.code} — ${f.type === 'OUTSIDE_PUMP' ? 'outside pump' : f.type === 'BOWSER' ? 'bowser' : 'own tank'}` }))} /></Field>
+          <Field label="Fuel source" required><Select value={src} onChange={setSrc} options={db.fuelSources.map((f) => ({ value: f.id, label: `${f.name} — ${f.type === 'OUTSIDE_PUMP' ? 'outside pump' : f.type === 'BOWSER' ? 'bowser' : 'own tank'}` }))} /></Field>
           <Field label="Litres" required><NumberInput value={litres} onChange={setLitres} suffix="L" /></Field>
           <Field label="Rate"><NumberInput value={rate} onChange={setRate} prefix="₹" /></Field>
           <Field label={v?.meterType === 'HOURS' ? 'Hour meter at fill' : 'Odometer at fill'} required error={warn} className="col-span-2">
             <NumberInput value={reading} onChange={setReading} suffix={unitOf(v)} placeholder={last ? `> ${num(last, 1)}` : ''} />
           </Field>
         </div>
-        <Toggle checked={full} onChange={setFull} label="Full tank" hint="Efficiency is calculated between two full-tank fills (FUEL-07)" />
+        <Toggle checked={full} onChange={setFull} label="Full tank" hint="Efficiency is calculated between two full-tank fills" />
         <AttachField count={photos} onChange={setPhotos} label="Pump slip & meter photo" />
         <DateRuleNote date={d} />
       </div>
@@ -242,7 +243,7 @@ function FuelForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ================= Tanks & bowsers (FUEL-01/02/03) ================= */
+/* ================= Tanks & bowsers ================= */
 function TanksTab() {
   const db = useDB();
   const s = useSession();
@@ -261,7 +262,7 @@ function TanksTab() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
-        <Segmented value={src} onChange={setSrc} options={tanks.map((t) => ({ value: t.id, label: t.code }))} />
+        <Segmented value={src} onChange={setSrc} options={tanks.map((t) => ({ value: t.id, label: t.name }))} />
         <div className="flex-1" />
         {s.can('fleet', 'add') && (
           <>
@@ -273,7 +274,7 @@ function TanksTab() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="p-5 md:col-span-1">
           <div className="text-sm font-semibold">{tank.name}</div>
-          <div className="text-xs text-muted">{tank.type === 'BOWSER' ? 'Mobile bowser — moves between sites (FUEL-03)' : 'Own fuel tank'}</div>
+          <div className="text-xs text-muted">{tank.type === 'BOWSER' ? 'Mobile bowser — moves between sites' : 'Own fuel tank'}</div>
           <div className="flex items-end gap-4 mt-4">
             <div className="relative w-20 h-36 rounded-2xl border-2 border-line-strong overflow-hidden bg-surface-2">
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-amber-600 to-amber-400 transition-all duration-1000" style={{ height: `${Math.min(100, (bal / tank.capacity) * 100)}%` }} />
@@ -291,7 +292,7 @@ function TanksTab() {
           </div>
         </Card>
         <Card className="md:col-span-2">
-          <CardHeader title="Book vs dip — last 30 days" subtitle="FUEL-02 · variance between book balance and physical dip" />
+          <CardHeader title="Book vs dip — last 30 days" subtitle="variance between book balance and physical dip" />
           <div className="px-4 pb-4">
             <LineChart
               height={180}
@@ -303,7 +304,7 @@ function TanksTab() {
         </Card>
       </div>
       <DataTable
-        title={`Fuel stock ledger — ${tank.code}`}
+        title={`Fuel stock ledger — ${tank.name}`}
         rows={rows}
         rowKey={(r, i) => `${r.ref}-${i}`}
         columns={[
@@ -317,7 +318,7 @@ function TanksTab() {
           { key: 'var', header: 'Variance', align: 'right', value: (r) => r.variance ?? '', cell: (r) => (r.variance !== undefined ? <span className={Math.abs(r.variance) > r.balance * 0.02 ? 'text-bad font-semibold' : 'text-muted'}>{r.variance > 0 ? '+' : ''}{num(r.variance, 1)}</span> : '') },
         ]}
       />
-      <Drawer open={buy} onClose={() => setBuy(false)} title="Fuel purchase into tank" subtitle="FUEL-01 · supplier, litres, rate, invoice, dip before / after" footer={<><Button onClick={() => setBuy(false)}>Cancel</Button><Button variant="primary" onClick={() => { if (!litres) return toast.error('Litres required'); insert('fuelPurchases', { no: nextNo('FPR'), date: today(), sourceId: src, supplierId: 'sp14', litres: Number(litres), rate: Number(rate), invoiceNo: inv, dipBefore: Math.round(bal), dipAfter: Math.round(bal + Number(litres)) } as any, `Fuel purchase ${litres} L into ${tank.code}`, 'Fuel purchase'); setBuy(false); toast.success('Purchase recorded'); }}>Save</Button></>}>
+      <Drawer open={buy} onClose={() => setBuy(false)} title="Fuel purchase into tank" subtitle="supplier, litres, rate, invoice, dip before / after" footer={<><Button onClick={() => setBuy(false)}>Cancel</Button><Button variant="primary" onClick={() => { if (!litres) return toast.error('Litres required'); insert('fuelPurchases', { no: nextNo('FPR'), date: today(), sourceId: src, supplierId: 'sp14', litres: Number(litres), rate: Number(rate), invoiceNo: inv, dipBefore: Math.round(bal), dipAfter: Math.round(bal + Number(litres)) } as any, `Fuel purchase ${litres} L into ${tank.code}`, 'Fuel purchase'); setBuy(false); toast.success('Purchase recorded'); }}>Save</Button></>}>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Litres" required><NumberInput value={litres} onChange={setLitres} suffix="L" /></Field>
           <Field label="Rate"><NumberInput value={rate} onChange={setRate} prefix="₹" /></Field>
@@ -332,7 +333,7 @@ function TanksTab() {
   );
 }
 
-/* ================= Logbook (VEH-01/02) ================= */
+/* ================= Logbook ================= */
 function LogbookTab() {
   const db = useDB();
   const s = useSession();
@@ -400,12 +401,12 @@ function LogForm({ onClose }: { onClose: () => void }) {
     if (Number(close) < Number(open)) return toast.error('Closing reading cannot be less than opening');
     const isHr = v.meterType === 'HOURS';
     const rec: Partial<LogEntry> = { date: d, vehicleId: vid, siteId: site, driver: v.driver, trips: Number(trips) || 0, route: routeTxt || 'Within site', material: mat || undefined, materialQty: Number(matQty) || undefined, idleHours: Number(idle) || 0, idleReason: reason || undefined, ...(isHr ? { openHr: Number(open), closeHr: Number(close) } : { openKm: Number(open), closeKm: Number(close) }), split: split && site2 ? [{ siteId: site, share: Number(share) / 100 }, { siteId: site2, share: 1 - Number(share) / 100 }] : undefined };
-    insert('logs', rec as any, `Logbook ${v.code} ${d}`, 'Logbook');
-    toast.success('Logbook saved', split ? 'Cost split between the two sites (VEH-02)' : undefined);
+    insert('logs', rec as any, `Logbook ${vehicleName(v)} ${d}`, 'Logbook');
+    toast.success('Logbook saved', split ? 'Cost split between the two sites' : undefined);
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Daily logbook" subtitle="VEH-01 · opening/closing km or hours, trips, material carried, idle hours" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
+    <Drawer open onClose={onClose} title="Daily logbook" subtitle="opening/closing km or hours, trips, material carried, idle hours" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
       <div className="space-y-4">
         <Field label="Vehicle / machine" required><Combo value={vid} onChange={pick} options={vehicleOpts(vs)} /></Field>
         <div className="grid grid-cols-2 gap-4">
@@ -420,7 +421,7 @@ function LogForm({ onClose }: { onClose: () => void }) {
           <Field label="Idle hours"><NumberInput value={idle} onChange={setIdle} suffix="h" /></Field>
           <Field label="Idle reason"><Select value={reason || ''} onChange={(x) => setReason(x as LogEntry['idleReason'])} options={[{ value: '', label: '—' }, ...['Breakdown', 'No work', 'Rain', 'No operator'].map((x) => ({ value: x, label: x }))]} /></Field>
         </div>
-        <Toggle checked={split} onChange={setSplit} label="Worked at two sites today" hint="Hours / km and cost are split in this ratio (VEH-02)" />
+        <Toggle checked={split} onChange={setSplit} label="Worked at two sites today" hint="Hours / km and cost are split in this ratio" />
         {split && (
           <div className="grid grid-cols-2 gap-4 anim-pop">
             <Field label="Second site"><Select value={site2} onChange={setSite2} placeholder="Choose" options={db.sites.filter((x) => x.id !== site).map((x) => ({ value: x.id, label: x.short }))} /></Field>
@@ -450,7 +451,7 @@ function EfficiencyTab() {
   return (
     <div className="space-y-4">
       <Callout>
-        Efficiency is worked out between two full-tank fills: <b>KMPL = km run ÷ litres filled</b>, <b>LPH = litres ÷ engine hours</b>. Expected fuel = km ÷ standard KMPL, or hours × standard LPH. Variance above {tol}% raises an alert to the owner (FUEL-07/08).
+        Efficiency is worked out between two full-tank fills: <b>KMPL = km run ÷ litres filled</b>, <b>LPH = litres ÷ engine hours</b>. Expected fuel = km ÷ standard KMPL, or hours × standard LPH. Variance above {tol}% raises an alert to the owner.
       </Callout>
       <div className="flex flex-wrap gap-2 items-center">
         <Segmented value={by} onChange={setBy} options={[{ value: 'vehicle', label: 'By vehicle' }, { value: 'fills', label: 'Fill-to-fill' }, { value: 'month', label: 'Monthly trend' }]} />
@@ -462,7 +463,7 @@ function EfficiencyTab() {
           <Card>
             <CardHeader title="Variance vs standard (%)" subtitle={`Above ${tol}% is flagged`} />
             <div className="px-4 pb-4">
-              <ColumnChart data={summary.slice().sort((a, b) => b.variancePct - a.variancePct).map((e) => ({ label: n.lk.vehicle[e.vehicleId]?.code || '', values: { v: round(Math.max(0, e.variancePct), 1) } }))} series={[{ key: 'v', label: 'Over standard %', color: 'var(--s2)' }]} height={200} format={(x) => `${x.toFixed(0)}%`} />
+              <ColumnChart data={summary.slice().sort((a, b) => b.variancePct - a.variancePct).map((e) => ({ label: vehicleName(n.lk.vehicle[e.vehicleId]) || '', values: { v: round(Math.max(0, e.variancePct), 1) } }))} series={[{ key: 'v', label: 'Over standard %', color: 'var(--s2)' }]} height={200} format={(x) => `${x.toFixed(0)}%`} />
             </div>
           </Card>
           <DataTable
@@ -502,7 +503,7 @@ function EfficiencyTab() {
       )}
       {by === 'month' && (
         <Card>
-          <CardHeader title="Fuel issued per month (litres)" subtitle="FUEL-10 · consumption trend" />
+          <CardHeader title="Fuel issued per month (litres)" subtitle="consumption trend" />
           <div className="px-4 pb-4"><ColumnChart data={monthly} series={[{ key: 'l', label: 'Litres' }]} height={240} format={(x) => num(x)} /></div>
         </Card>
       )}
@@ -521,7 +522,7 @@ function HireTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 stagger">
         {hired.map((v) => (
           <Card key={v.id} className="p-4">
-            <div className="font-semibold">{v.code} <span className="text-xs text-muted font-normal">{v.type}</span></div>
+            <div className="font-semibold">{vehicleName(v)} <span className="text-xs text-muted font-normal">{v.type}</span></div>
             <div className="text-xs text-muted">{v.ownerName}</div>
             <div className="mt-2 text-sm">
               <Money v={v.hireRate || 0} /> <span className="text-muted">{v.hireBasis?.replace('PER_', 'per ').toLowerCase()}</span>
@@ -650,14 +651,14 @@ function JobCardForm({ onClose }: { onClose: () => void }) {
         <Field label="Downtime"><NumberInput value={down} onChange={setDown} suffix="h" /></Field>
         <Field label="Complaint" required className="sm:col-span-2"><Textarea value={complaint} onChange={(e) => setComplaint(e.target.value)} /></Field>
         <Field label="Work done" className="sm:col-span-2" hint="Leave blank to keep the job open"><Textarea value={work} onChange={(e) => setWork(e.target.value)} /></Field>
-        <Field label="Spares cost" hint="Spares from store are issued via Central store (STR-05)"><NumberInput value={spares} onChange={setSpares} prefix="₹" /></Field>
+        <Field label="Spares cost" hint="Spares from store are issued via Central store"><NumberInput value={spares} onChange={setSpares} prefix="₹" /></Field>
         <Field label="Outside labour"><NumberInput value={labour} onChange={setLabour} prefix="₹" /></Field>
       </div>
     </Drawer>
   );
 }
 
-/* ================= Documents (DOC-01/02) ================= */
+/* ================= Documents ================= */
 function DocumentsTab() {
   const db = useDB();
   const s = useSession();
@@ -676,7 +677,7 @@ function DocumentsTab() {
       </div>
       <DataTable
         title="Document expiry"
-        subtitle="Alerts go out 30, 15 and 7 days before expiry (DOC-02)"
+        subtitle="Alerts go out 30, 15 and 7 days before expiry"
         rows={rows}
         rowKey={(r) => `${r.vehicleId}-${r.type}`}
         rowClassName={(r) => (r.days < 0 ? 'bg-bad-soft/40' : undefined)}
@@ -690,7 +691,7 @@ function DocumentsTab() {
           { key: 'act', header: '', sortable: false, cell: (r) => (r.days <= 30 && s.can('fleet', 'edit') ? <Button size="sm" onClick={(e) => (e.stopPropagation(), setRenew(r), setNewDate(addDays(r.expiry < today() ? today() : r.expiry, 365)))}>Renew</Button> : null) },
         ]}
       />
-      <Modal open={!!renew} onClose={() => setRenew(null)} title={`Renew ${renew?.type}`} footer={<><Button onClick={() => setRenew(null)}>Cancel</Button><Button variant="primary" onClick={() => { const v = db.vehicles.find((x) => x.id === renew!.vehicleId)!; update('vehicles', v.id, { docs: v.docs.map((d) => (d.type === renew!.type ? { ...d, expiry: newDate } : d)) }, `${v.code} ${renew!.type} renewed`, 'Vehicle'); setRenew(null); toast.success('Document renewed'); }}>Save</Button></>}>
+      <Modal open={!!renew} onClose={() => setRenew(null)} title={`Renew ${renew?.type}`} footer={<><Button onClick={() => setRenew(null)}>Cancel</Button><Button variant="primary" onClick={() => { const v = db.vehicles.find((x) => x.id === renew!.vehicleId)!; update('vehicles', v.id, { docs: v.docs.map((d) => (d.type === renew!.type ? { ...d, expiry: newDate } : d)) }, `${vehicleName(v)} ${renew!.type} renewed`, 'Vehicle'); setRenew(null); toast.success('Document renewed'); }}>Save</Button></>}>
         <Field label="New expiry date"><Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} /></Field>
         <div className="mt-3"><AttachField count={0} onChange={() => {}} label="Scanned copy" /></div>
       </Modal>
@@ -698,7 +699,7 @@ function DocumentsTab() {
   );
 }
 
-/* ================= Vehicle cost (VEH-03/04) ================= */
+/* ================= Vehicle cost ================= */
 function CostTab() {
   const db = useDB();
   const n = useNames();

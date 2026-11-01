@@ -47,6 +47,17 @@ describe('v2 store', () => {
     expect(nos[11]! - nos[0]!).toBe(11);
   });
 
+  it('a repeated command id is answered from the log, not saved twice (PF-03)', async () => {
+    const before = (await store.load(CO)).db.expenses.length;
+    const once = { cmdId: 'retry-test-0001', userId: 'u4' };
+    const a = await store.write(CO, expense(777), once);
+    const b = await store.write(CO, expense(777), once);
+    expect(b.replay).toBe(true);
+    expect(b.extra.id).toBe(a.extra.id);
+    (store as any).cache.clear();
+    expect((await store.load(CO)).db.expenses.length).toBe(before + 1);
+  });
+
   it('a failed command changes nothing', async () => {
     const rev = await store.rev(CO);
     await expect(store.write(CO, expense(-5))).rejects.toThrow();

@@ -1,3 +1,4 @@
+import { vehicleName } from './works.js';
 import type { CostHead, DB, Dispatch, FuelIssue, ID, LogEntry, PurchaseInvoice, RaBill, StockTxn, SubconBill, Vehicle } from './types.js';
 import { bkey, getLedger, isEffective, productionUse, type Movement } from './ledger.js';
 import { addDays, daysBetween, monthOf, today } from './format.js';
@@ -744,7 +745,7 @@ export function vehicleCost(db: DB, r: Range) {
     });
   });
 }
-const insuranceAnnual = (v: Vehicle) => ({ Tipper: 85000, 'Transit Mixer': 92000, JCB: 48000, Excavator: 120000, Roller: 60000, Paver: 140000, Grader: 110000, Tanker: 45000, Car: 38000, Generator: 18000, Loader: 70000 })[v.type] || 50000;
+const insuranceAnnual = (v: Vehicle) => ({ Tipper: 85000, 'Transit Mixer': 92000, JCB: 48000, Excavator: 120000, Roller: 60000, Paver: 140000, Grader: 110000, Tanker: 45000, Car: 38000, Generator: 18000, Loader: 70000 } as Partial<Record<Vehicle['type'], number>>)[v.type] || 50000;
 
 export function serviceDue(db: DB) {
   return memo(db, 'svc', () =>
@@ -752,7 +753,9 @@ export function serviceDue(db: DB) {
       const meter = vehicleMeter(db, v.id);
       const since = meter - v.lastServiceAt;
       const left = v.serviceEvery - since;
-      return { vehicleId: v.id, meter, since: round(since, 1), left: round(left, 1), status: left <= 0 ? 'OVERDUE' : left <= v.serviceEvery * 0.1 ? 'DUE SOON' : 'OK' };
+      // no service interval set yet → nothing to remind about
+      if (!(v.serviceEvery > 0)) return { vehicleId: v.id, meter, since: round(since, 1), left: 0, status: 'NOT SET' as const };
+      return { vehicleId: v.id, meter, since: round(since, 1), left: round(left, 1), status: left <= 0 ? ('OVERDUE' as const) : left <= v.serviceEvery * 0.1 ? ('DUE SOON' as const) : ('OK' as const) };
     }),
   );
 }
@@ -945,10 +948,14 @@ export function siteCostSheet(db: DB, siteId: ID, r?: Range) {
     }
     if (!r) for (const h of COST_HEADS) heads[h] += site.openingCost[h] || 0;
     const cost = sum(COST_HEADS, (h) => heads[h]);
-    const workDone = sum(db.measurements.filter((m) => m.siteId === siteId && inRange(m.date, r)), (m) => m.qty * (lookup(db).boq[m.boqItemId]?.rate || 0));
+    const workDone0 = sum(db.measurements.filter((m) => m.siteId === siteId && inRange(m.date, r)), (m) => m.qty * (lookup(db).boq[m.boqItemId]?.rate || 0));
     const bills = db.raBills.filter((b) => b.siteId === siteId && inRange(b.date, r));
-    const billed = sum(bills, (b) => raCalc(b).gross);
-    const received = sum(db.raBills.filter((b) => b.siteId === siteId), (b) => sum(b.receipts.filter((x) => inRange(x.date, r)), (x) => x.amount));
+    const billed0 = sum(bills, (b) => raCalc(b).gross);
+    const received0 = sum(db.raBills.filter((b) => b.siteId === siteId), (b) => sum(b.receipts.filter((x) => inRange(x.date, r)), (x) => x.amount));
+    // running works brought in at go-live carry their figures up to that date (PF-06)
+    const workDone = workDone0 + (r ? 0 : site.openingWorkDone || 0);
+    const billed = billed0 + (r ? 0 : site.openingBilled || 0);
+    const received = received0 + (r ? 0 : site.openingReceived || 0);
     const profit = workDone - cost;
     return { siteId, heads, sources, cost, workDone, billed, received, profit, margin: workDone ? (profit / workDone) * 100 : 0, budget: site.budget, budgetTotal: sum(COST_HEADS, (h) => site.budget[h]) };
   });
@@ -983,7 +990,7 @@ export function pendingApprovals(db: DB): ApprovalItem[] {
     for (const r of db.requisitions.filter((x) => x.status === 'PENDING')) out.push({ id: r.id, collection: 'requisitions', module: 'Purchase', title: `Requisition ${r.no}`, detail: `${r.lines.map((l) => `${lk.material[l.materialId]?.name} ${l.qty} ${lk.material[l.materialId]?.unit}`).join(', ')} · ${lk.store[r.storeId]?.name} · ${r.purpose}`, siteId: lk.store[r.storeId]?.siteId, date: r.date, createdAt: r.createdAt, createdBy: r.createdBy, link: '/purchase/requisitions' });
     for (const p of db.pos.filter((x) => x.status === 'PENDING')) out.push({ id: p.id, collection: 'pos', module: 'Purchase', title: `Purchase order ${p.no}`, detail: `${lk.supplier[p.supplierId]?.name} · ${p.lines.map((l) => `${lk.material[l.materialId]?.name} ${l.qty}`).join(', ')}`, amount: poValue(p.lines), siteId: lk.store[p.deliveryStoreId]?.siteId, date: p.date, createdAt: p.createdAt, createdBy: p.createdBy, link: '/purchase/orders' });
     for (const e of db.expenses.filter((x) => x.status === 'PENDING')) out.push({ id: e.id, collection: 'expenses', module: 'Expenses', title: `Expense ${e.no}`, detail: `${lk.head[e.headId]?.head} › ${lk.head[e.headId]?.subHead} · paid to ${e.paidTo}`, amount: e.amount, siteId: e.siteId, date: e.date, createdAt: e.createdAt, createdBy: e.createdBy, link: '/expenses/entries' });
-    for (const f of db.fuelIssues.filter((x) => x.status === 'PENDING')) out.push({ id: f.id, collection: 'fuelIssues', module: 'Fleet', title: `Fuel issue ${f.no}`, detail: `${lk.vehicle[f.vehicleId]?.code} · ${f.litres} L${f.flag ? ` · ⚠ ${f.flag}` : ''}`, amount: f.litres * f.rate, siteId: f.siteId, date: f.date, createdAt: f.createdAt, createdBy: f.createdBy, link: '/fleet/fuel' });
+    for (const f of db.fuelIssues.filter((x) => x.status === 'PENDING')) out.push({ id: f.id, collection: 'fuelIssues', module: 'Fleet', title: `Fuel issue ${f.no}`, detail: `${vehicleName(lk.vehicle[f.vehicleId])} · ${f.litres} L${f.flag ? ` · ⚠ ${f.flag}` : ''}`, amount: f.litres * f.rate, siteId: f.siteId, date: f.date, createdAt: f.createdAt, createdBy: f.createdBy, link: '/fleet/fuel' });
     for (const i of db.imprests.filter((x) => x.status === 'PENDING')) out.push({ id: i.id, collection: 'imprests', module: 'Expenses', title: `Cash top-up ${i.no}`, detail: `${lk.site[i.siteId]?.short} · ${i.remark}`, amount: i.amount, siteId: i.siteId, date: i.date, createdAt: i.createdAt, createdBy: i.createdBy, link: '/expenses/petty-cash' });
     for (const b of db.subconBills.filter((x) => x.status === 'PENDING')) {
       const wo = lk.workOrder[b.workOrderId];
@@ -1023,7 +1030,7 @@ export function alerts(db: DB): Alert[] {
     // ALT-02 fuel variance
     for (const e of vehicleEfficiencySummary(db, r30).filter((x) => x.variancePct > db.settings.tolerance.fuel)) {
       const v = lk.vehicle[e.vehicleId]!;
-      out.push({ id: `a2f-${e.vehicleId}`, code: 'ALT-02', severity: e.variancePct > db.settings.tolerance.fuel * 1.6 ? 'serious' : 'warning', title: `Fuel variance ${v.code} (${v.type})`, detail: `${e.actual.toFixed(2)} ${e.unit} vs standard ${e.standard} · ${e.variancePct.toFixed(1)}% over · ${round(e.variance)} L extra`, siteId: v.siteId, link: '/fleet/efficiency' });
+      out.push({ id: `a2f-${e.vehicleId}`, code: 'ALT-02', severity: e.variancePct > db.settings.tolerance.fuel * 1.6 ? 'serious' : 'warning', title: `Fuel variance ${vehicleName(v)} (${v.type})`, detail: `${e.actual.toFixed(2)} ${e.unit} vs standard ${e.standard} · ${e.variancePct.toFixed(1)}% over · ${round(e.variance)} L extra`, siteId: v.siteId, link: '/fleet/efficiency' });
     }
     // ALT-02 plant raw-material variance
     for (const p of db.plants) {
@@ -1033,11 +1040,11 @@ export function alerts(db: DB): Alert[] {
     // ALT-03 documents / licences / service
     for (const d of docExpiries(db).filter((x) => x.days <= 30)) {
       const v = lk.vehicle[d.vehicleId]!;
-      out.push({ id: `a3-${d.vehicleId}-${d.type}`, code: 'ALT-03', severity: d.days < 0 ? 'critical' : d.days <= 7 ? 'serious' : 'warning', title: `${d.type} ${d.days < 0 ? 'expired' : 'expiring'} — ${v.code} ${v.regNo}`, detail: d.days < 0 ? `Expired ${-d.days} days ago` : `Expires in ${d.days} days`, siteId: v.siteId, link: '/fleet/documents' });
+      out.push({ id: `a3-${d.vehicleId}-${d.type}`, code: 'ALT-03', severity: d.days < 0 ? 'critical' : d.days <= 7 ? 'serious' : 'warning', title: `${d.type} ${d.days < 0 ? 'expired' : 'expiring'} — ${vehicleName(v)} ${v.regNo}`, detail: d.days < 0 ? `Expired ${-d.days} days ago` : `Expires in ${d.days} days`, siteId: v.siteId, link: '/fleet/documents' });
     }
-    for (const s of serviceDue(db).filter((x) => x.status !== 'OK')) {
+    for (const s of serviceDue(db).filter((x) => x.status === 'OVERDUE' || x.status === 'DUE SOON')) {
       const v = lk.vehicle[s.vehicleId]!;
-      out.push({ id: `a3s-${s.vehicleId}`, code: 'ALT-03', severity: s.status === 'OVERDUE' ? 'serious' : 'warning', title: `Service ${s.status === 'OVERDUE' ? 'overdue' : 'due'} — ${v.code}`, detail: `${s.since} ${v.meterType === 'HOURS' ? 'hrs' : 'km'} since last service (interval ${v.serviceEvery})`, siteId: v.siteId, link: '/fleet/maintenance' });
+      out.push({ id: `a3s-${s.vehicleId}`, code: 'ALT-03', severity: s.status === 'OVERDUE' ? 'serious' : 'warning', title: `Service ${s.status === 'OVERDUE' ? 'overdue' : 'due'} — ${vehicleName(v)}`, detail: `${s.since} ${v.meterType === 'HOURS' ? 'hrs' : 'km'} since last service (interval ${v.serviceEvery})`, siteId: v.siteId, link: '/fleet/maintenance' });
     }
     for (const c of db.subcons.filter((x) => x.licenceExpiry)) {
       const d = daysBetween(today(), c.licenceExpiry!);
@@ -1069,7 +1076,7 @@ export function alerts(db: DB): Alert[] {
     }
     // ALT-07 payables / receivables
     const pay = payablesAgeing(db).filter((p) => p.overdue > 0);
-    if (pay.length) out.push({ id: 'a7p', code: 'ALT-07', severity: 'serious', title: `${pay.length} suppliers have overdue payments`, detail: pay.slice(0, 3).map((p) => `${lk.supplier[p.supplierId]?.code} ₹${Math.round(p.overdue).toLocaleString('en-IN')}`).join(' · '), link: '/purchase/payables' });
+    if (pay.length) out.push({ id: 'a7p', code: 'ALT-07', severity: 'serious', title: `${pay.length} suppliers have overdue payments`, detail: pay.slice(0, 3).map((p) => `${lk.supplier[p.supplierId]?.name} ₹${Math.round(p.overdue).toLocaleString('en-IN')}`).join(' · '), link: '/purchase/payables' });
     const rec = receivablesAgeing(db).filter((x) => x.age > 45);
     if (rec.length) out.push({ id: 'a7r', code: 'ALT-07', severity: 'warning', title: `${rec.length} RA bills overdue from clients (> 45 days)`, detail: rec.slice(0, 3).map((x) => `${x.billNo}`).join(' · '), link: '/contract/receivables' });
     const order = { critical: 0, serious: 1, warning: 2 };

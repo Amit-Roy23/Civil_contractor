@@ -1,3 +1,4 @@
+import { vehicleName } from '@civil/domain/works';
 import { useMemo } from 'react';
 import {
   ArrowRight,
@@ -310,7 +311,7 @@ export default function Dashboard() {
                 const q = sum(prodToday.filter((x) => x.plantId === p.id), (x) => x.qty);
                 return (
                   <div key={p.id} className="rounded-xl bg-surface-2 border border-line p-2.5">
-                    <div className="text-[11px] text-muted">{p.code}</div>
+                    <div className="text-[11px] text-muted truncate">{p.name}</div>
                     <div className="text-base font-bold num">{num(q)}</div>
                     <div className="text-[10px] text-muted">{p.type === 'BATCHING' ? 'cum' : 'MT'} produced</div>
                   </div>
@@ -349,7 +350,7 @@ export default function Dashboard() {
                   {outliers.slice(0, 4).map((o) => (
                     <button key={o.vehicleId} onClick={() => navigate('/fleet/efficiency')} className="w-full flex items-center justify-between text-[13px] p-2 rounded-lg hover:bg-surface-3">
                       <span className="text-left">
-                        <span className="font-medium">{lk.vehicle[o.vehicleId]?.code}</span> <span className="text-muted">{lk.vehicle[o.vehicleId]?.type}</span>
+                        <span className="font-medium">{vehicleName(lk.vehicle[o.vehicleId])}</span> <span className="text-muted">{lk.vehicle[o.vehicleId]?.regNo ? lk.vehicle[o.vehicleId]?.type : ''}</span>
                       </span>
                       <Badge tone="bad">+{o.variancePct.toFixed(1)}%</Badge>
                     </button>
@@ -412,7 +413,7 @@ export default function Dashboard() {
               <span className="min-w-0">
                 <span className="block text-[13px] font-medium">{a.title}</span>
                 <span className="block text-[11px] text-muted truncate">
-                  {a.code} · {a.detail}
+                  {a.detail}
                 </span>
               </span>
             </button>

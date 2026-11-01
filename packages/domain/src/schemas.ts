@@ -30,18 +30,60 @@ const base = {
 const trade = z.enum(['Mason', 'Helper', 'Carpenter', 'Bar Bender', 'Operator', 'Driver', 'Electrician', 'Supervisor']);
 const qtyLine = z.object({ materialId: id, qty: nn });
 const poLine = z.object({ materialId: id, qty: nn, rate: nn, gstPct: pct });
+const optDate = z.union([date, z.literal('')]).default('');
+/** small image as a data URL (logo, signature) — about 300 KB at most */
+const image = z.string().max(400_000).regex(/^(|data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+)$/, 'image must be PNG, JPEG, WebP or SVG');
+const contact = z.object({ designation: s(60).default(''), name: s(120).default(''), phone: s(30).default('') });
+const deductions = z.object({
+  gstTdsPct: pct, gstTdsThreshold: nn, itTdsPct: pct, itTdsOnGst: z.boolean(), labourCessPct: pct, labourCessOnGst: z.boolean(), tcsPct: pct,
+  others: z.array(z.object({ head: s(100), pct: pct.default(0), basis: z.enum(['GROSS', 'TAXABLE', 'FIXED']).default('GROSS'), amount: nn.optional() })).max(20).default([]),
+});
+const guarantee = {
+  amount: nn.default(0), mode: z.enum(['BG', 'FDR', 'EBG', 'ONLINE', 'EXEMPTED', '']).default(''), bank: s(120).default(''), number: s(60).default(''),
+  issueDate: optDate, validity: optDate, claimDate: optDate,
+};
+const stage = z.enum(['BID_SUBMITTED', 'LOA_RECEIVED', 'AGREEMENT_SIGNED', 'IN_PROGRESS', 'STOPPED', 'PHYSICALLY_COMPLETE', 'FINAL_BILL_SUBMITTED', 'FINAL_BILL_PAID', 'DLP', 'SECURITY_RELEASED', 'CLOSED']);
 
 export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
+  firms: z.object({
+    ...base, code: z.string().regex(/^[A-Za-z0-9-]{1,10}$/, 'code: 1–10 letters or digits'), legalName: s(200), tradeName: s(200).default(''),
+    constitution: z.enum(['PROPRIETOR', 'PARTNERSHIP', 'LLP', 'COMPANY']).default('PROPRIETOR'),
+    gstin: z.string().regex(/^(|[0-9]{2}[A-Z0-9]{13})$/, 'GSTIN must be 15 characters').default(''), gstRegType: s(60).optional(), gstLiableFrom: optDate,
+    pan: z.string().regex(/^(|[A-Z]{5}[0-9]{4}[A-Z])$/, 'PAN must look like ABCDE1234F').default(''), tan: s(10).default(''), udyam: s(40).default(''),
+    enlistment: z.object({ dept: s(120).default(''), no: s(60).default(''), cls: s(30).default(''), limit: nn.default(0), validTo: optDate }).default({}),
+    address: s(500).default(''), places: z.array(z.object({ name: s(120), address: s(500) })).max(10).default([]),
+    contactName: s(120).default(''), phone: s(30).default(''), email: s(120).default(''),
+    labourLicence: z.object({ no: s(60).default(''), authority: s(200).default(''), validTo: optDate, note: s(300).default('') }).default({}),
+    epfCode: s(40).default(''), esicCode: s(40).default(''),
+    banks: z.array(z.object({ bank: s(200), account: s(40), ifsc: s(20), branch: s(120).optional() })).max(10).default([]),
+    logo: image.optional(), signature: image.optional(), invoicePrefix: z.string().regex(/^[A-Za-z0-9/-]{0,20}$/, 'invoice prefix: letters, digits, / or -').default(''),
+  }),
   sites: z.object({
-    ...base, code: s(30), name: s(200), short: s(60), clientId: id, workOrderNo: s(100).default(''), workOrderDate: z.union([date, z.literal('')]).default(''),
+    ...base, code: s(30).default(''), name: s(300), short: s(60).default(''), clientId: id, workOrderNo: s(100).default(''), workOrderDate: z.union([date, z.literal('')]).default(''),
     contractValue: nn, location: s(200).default(''), gps: s(60).default(''), startDate: z.union([date, z.literal('')]).default(''), scheduledCompletion: z.union([date, z.literal('')]).default(''),
     actualCompletion: date.optional(), engineerId: optId, status: z.enum(['ACTIVE', 'ON_HOLD', 'COMPLETED']), securityDeposit: nn.default(0), retentionPct: pct.default(5), gstPct: pct.default(18),
     workType: z.enum(['ROAD', 'BRIDGE', 'BUILDING', 'IRRIGATION']), budget: costHeads, openingCost: costHeads, openingAsOf: s(10).default(''),
+    firmId: optId, officeId: optId, stage: stage.optional(),
+    tender: z.object({ nitNo: s(120).default(''), nitDate: optDate, tenderId: s(60).default('') }).optional(),
+    agreementNo: s(120).optional(), agreementDate: z.union([date, z.literal('')]).optional(), estimatedCost: nn.optional(),
+    quoteType: z.enum(['ABOVE', 'BELOW', 'PAR', 'ITEM_RATE']).optional(), quotedPct: pct.optional(), gstIncluded: z.boolean().optional(),
+    district: s(100).optional(), subDivision: s(100).optional(), block: s(100).optional(), chainageFrom: nn.optional(), chainageTo: nn.optional(), lengthKm: nn.optional(),
+    timeAllowedMonths: nn.optional(), eots: z.array(z.object({ letterNo: s(120), date: date, newCompletion: date, reason: s(300).default('') })).max(30).optional(),
+    clientEngineers: z.array(contact).max(20).optional(), supervisorName: s(120).optional(),
+    emd: z.object({ ...guarantee, refundDate: optDate }).optional(), perfSecurity: z.object({ ...guarantee, pct: pct.default(0) }).optional(), addlPerfSecurity: z.object(guarantee).optional(),
+    sdCeiling: nn.optional(), dlpMonths: z.number().int().min(0).max(120).optional(), deductions: deductions.optional(),
+    advances: z.array(z.object({ kind: z.enum(['MOBILISATION', 'MACHINERY', 'SECURED']), amount: nn, interestPct: pct.default(0), recoveryPct: pct.default(0) })).max(10).optional(),
+    priceAdjustment: z.object({ applicable: z.boolean(), baseDate: optDate, components: z.array(z.object({ name: s(60), basePrice: nn, unit: s(20).default(''), sharePct: pct.default(0) })).max(10).default([]) }).optional(),
+    ld: z.object({ ratePct: pct, per: z.enum(['DAY', 'WEEK', 'MONTH']).default('WEEK'), maxPct: pct }).optional(),
+    milestones: z.array(z.object({ date, targetPct: pct, label: s(120).default('') })).max(30).optional(),
+    plantId: optId, openingWorkDone: nn.optional(), openingBilled: nn.optional(), openingReceived: nn.optional(),
   }),
-  stores: z.object({ ...base, code: s(30), name: s(200), type: z.enum(['CENTRAL', 'SITE', 'PLANT']), siteId: optId, plantId: optId }),
+  stores: z.object({ ...base, code: s(30), name: s(200), type: z.enum(['CENTRAL', 'SITE', 'PLANT']), siteId: optId, plantId: optId, address: s(500).optional(), holds: s(500).optional() }),
   plants: z.object({
     ...base, code: s(30), name: s(200), type: z.enum(['HOT_MIX', 'BATCHING', 'CRUSHER', 'WMM']), capacityPerHour: nn.default(0), capacityUnit: s(20).default(''), location: s(200).default(''),
     inChargeId: optId, storeId: id, costMode: z.enum(['ACTUAL', 'FIXED']).default('ACTUAL'), fixedRate: rec(nn).default({}),
+    subType: z.enum(['DRUM_MIX', 'BATCH_MIX', '']).optional(), makeModel: s(120).optional(), consentedCapacity: nn.optional(), consentRef: s(200).optional(), firmId: optId,
+    inCharges: z.array(z.object({ name: s(120), userId: optId, from: date })).max(50).optional(), equipment: s(1000).optional(), power: s(200).optional(), burnerFuel: s(60).optional(),
   }),
   materials: z.object({
     ...base, code: s(30), name: s(200),
@@ -53,7 +95,12 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
     ...base, code: s(30), name: s(200), gstin: s(15).default(''), pan: s(10).default(''), address: s(400).default(''), contact: s(100).default(''), phone: s(20).default(''), bank: s(200).default(''),
     materials: s(300).default(''), creditDays: z.number().int().min(0).max(365).default(30), openingBalance: num.default(0), kind: z.enum(['MATERIAL', 'FUEL_PUMP', 'VEHICLE_OWNER', 'SERVICE']).default('MATERIAL'),
   }),
-  clients: z.object({ ...base, code: s(30), name: s(200), gstin: s(15).default(''), address: s(400).default(''), billingContact: s(200).default(''), tdsPct: pct.default(2), retentionPct: pct.default(5), cessPct: pct.default(1) }),
+  clients: z.object({
+    ...base, code: s(30), name: s(200), gstin: s(15).default(''), address: s(400).default(''), billingContact: s(200).default(''), tdsPct: pct.default(2), retentionPct: pct.default(5), cessPct: pct.default(1),
+    kind: z.enum(['GOVT', 'LOCAL_BODY', 'PRIVATE', 'BUYER']).optional(), email: s(120).optional(), phone: s(30).optional(),
+    offices: z.array(z.object({ id, circle: s(120).default(''), division: s(160).default(''), subDivision: s(160).default(''), address: s(500).default(''), email: s(120).default(''), gstin: s(15).default(''), contacts: z.array(contact).max(20).default([]) })).max(100).optional(),
+    deductions: deductions.optional(),
+  }),
   subcons: z.object({
     ...base, code: s(30), name: s(200), kind: z.enum(['LABOUR_CONTRACTOR', 'SUB_CONTRACTOR']), pan: s(10).default(''), gstin: s(15).default(''), trade: s(100).default(''),
     rateType: z.enum(['PER_DAY', 'PER_UNIT', 'LUMP_SUM']), bank: s(200).default(''), phone: s(20).default(''), openingBalance: num.default(0), licenceNo: s(60).optional(), licenceExpiry: date.optional(),
@@ -64,7 +111,7 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
     ownership: z.enum(['OWN', 'CONTRACTOR']), contractorId: optId, siteId: id, upi: s(100).default(''), joiningDate: z.union([date, z.literal('')]).default(''),
   }),
   vehicles: z.object({
-    ...base, code: s(30), regNo: s(40), type: z.enum(['Tipper', 'Transit Mixer', 'JCB', 'Excavator', 'Roller', 'Paver', 'Grader', 'Tanker', 'Car', 'Generator', 'Loader']),
+    ...base, code: s(30), regNo: s(40), type: z.enum(['Tipper', 'Transit Mixer', 'JCB', 'Excavator', 'Roller', 'Paver', 'Grader', 'Tanker', 'Car', 'Generator', 'Loader', 'Paver Finisher', 'Compactor', 'Mobile Hot Mix', 'Bitumen Sprayer', 'Sweeper', 'Road Cleaner', 'Marking Machine', 'Concrete Mixer', 'Tractor', 'Other']),
     make: s(60).default(''), model: s(100).default(''), year: z.number().int().min(1950).max(2100).default(2020), ownership: z.enum(['OWNED', 'HIRED']), ownerName: s(200).optional(), ownerSupplierId: optId,
     hireBasis: z.enum(['PER_HOUR', 'PER_DAY', 'PER_MONTH', 'PER_TRIP', 'PER_KM']).optional(), hireRate: nn.optional(), hireWithFuel: z.boolean().optional(), minGuaranteedHours: nn.optional(),
     fuelType: z.enum(['HSD', 'Petrol']).default('HSD'), tankCapacity: nn.default(0), meterType: z.enum(['KM', 'HOURS', 'BOTH']), stdKmpl: nn.optional(), stdLph: nn.optional(), driver: s(100).default(''),

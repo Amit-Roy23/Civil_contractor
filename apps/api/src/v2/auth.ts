@@ -56,7 +56,8 @@ export class V2Auth {
   async resolveCompany(code?: string) {
     const list = await this.store.companies();
     const want = (code || '').trim().toLowerCase();
-    const pick = want ? list.find((c) => c.id === want) : list.find((c) => c.id === process.env.DEFAULT_COMPANY) || (list.filter((c) => !c.is_demo).length === 1 ? list.find((c) => !c.is_demo) : list.length === 1 ? list[0] : undefined);
+    const real = list.filter((c) => !c.is_demo && !c.is_test);
+    const pick = want ? list.find((c) => c.id === want) : list.find((c) => c.id === process.env.DEFAULT_COMPANY) || (real.length === 1 ? real[0] : list.length === 1 ? list[0] : undefined);
     if (!pick) throw new UnauthorizedException(want ? 'Company code not found' : 'Enter your company code');
     return pick;
   }

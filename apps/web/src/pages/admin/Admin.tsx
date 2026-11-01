@@ -10,17 +10,19 @@ import { Field, Input, NumberInput, Segmented, Select, Toggle } from '../../comp
 import { dateTime, fyCode, today } from '../../lib/format';
 import { cn, initials } from '../../lib/utils';
 import { useModuleTab, useNames } from '../shared';
+import { BackupsTab } from './Backups';
 
 export default function Admin() {
   const { tab, tabsEl } = useModuleTab('admin');
   return (
     <div>
-      <PageHeader title="Administration" subtitle="Users, roles, settings and the audit trail." tags={['ROLE-01…05', 'SEC-01…04', '§2.4']} />
+      <PageHeader title="Administration" subtitle="Users, roles, settings, the audit trail and backups." />
       {tabsEl}
       {tab === 'users' && <UsersTab />}
       {tab === 'roles' && <RolesTab />}
       {tab === 'settings' && <SettingsTab />}
       {tab === 'audit' && <AuditTab />}
+      {tab === 'backups' && <BackupsTab />}
     </div>
   );
 }
@@ -41,7 +43,7 @@ function UsersTab() {
         columns={[
           { key: 'name', header: 'User', primary: true, value: (r) => r.name, cell: (r) => <div className="flex items-center gap-2.5"><span className="w-8 h-8 rounded-lg bg-surface-3 text-[11px] font-bold flex items-center justify-center">{initials(r.name)}</span><div><div className="font-medium">{r.name}</div><div className="text-[11px] text-muted">@{r.username} · {r.phone}</div></div></div> },
           { key: 'role', header: 'Role', value: (r) => db.roles.find((x) => x.id === r.roleId)?.name, cell: (r) => <Badge tone="info">{db.roles.find((x) => x.id === r.roleId)?.name}</Badge> },
-          { key: 'scope', header: 'Access to', value: (r) => (r.siteIds.length ? r.siteIds.map((s) => n.site(s)).join(', ') : r.plantIds.length ? r.plantIds.map((p) => n.lk.plant[p]?.code).join(', ') : 'All sites'), cell: (r) => <span className="text-[13px]">{r.siteIds.length ? r.siteIds.map((s) => n.site(s)).join(', ') : r.plantIds.length ? `Plants: ${r.plantIds.map((p) => n.lk.plant[p]?.code).join(', ')}` : db.roles.find((x) => x.id === r.roleId)?.allSites ? 'All sites' : 'Central store'}</span> },
+          { key: 'scope', header: 'Access to', value: (r) => (r.siteIds.length ? r.siteIds.map((s) => n.site(s)).join(', ') : r.plantIds.length ? r.plantIds.map((p) => n.lk.plant[p]?.name).join(', ') : 'All sites'), cell: (r) => <span className="text-[13px]">{r.siteIds.length ? r.siteIds.map((s) => n.site(s)).join(', ') : r.plantIds.length ? `Plants: ${r.plantIds.map((p) => n.lk.plant[p]?.name).join(', ')}` : db.roles.find((x) => x.id === r.roleId)?.allSites ? 'All sites' : 'Central store'}</span> },
           { key: '2fa', header: '2FA', value: (r) => (r.twoFactor ? 'On' : 'Off'), cell: (r) => (r.twoFactor ? <Badge tone="good">On</Badge> : <span className="text-muted text-xs">Off</span>), hideMobile: true },
           { key: 'active', header: 'Status', value: (r) => (r.active ? 'Active' : 'Disabled'), cell: (r) => (r.active ? <Badge tone="good" dot>Active</Badge> : <Badge>Disabled</Badge>) },
         ]}
@@ -68,7 +70,7 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title={user.id ? user.name : 'New user'} subtitle="ROLE-02 · a user can be limited to one or more sites / plants" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
+    <Drawer open onClose={onClose} title={user.id ? user.name : 'New user'} subtitle="a user can be limited to one or more sites / plants" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Full name" required><Input value={v.name || ''} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
@@ -95,13 +97,13 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
           <Section title="Plants">
             <div className="flex flex-wrap gap-2">
               {db.plants.map((p) => (
-                <button key={p.id} type="button" onClick={() => toggle('plantIds', p.id)} className={cn('px-3 h-9 rounded-xl border text-sm', (v.plantIds || []).includes(p.id) ? 'bg-brand-soft border-brand font-medium' : 'border-line text-fg-2')}>{p.code}</button>
+                <button key={p.id} type="button" onClick={() => toggle('plantIds', p.id)} className={cn('px-3 h-9 rounded-xl border text-sm', (v.plantIds || []).includes(p.id) ? 'bg-brand-soft border-brand font-medium' : 'border-line text-fg-2')}>{p.name}</button>
               ))}
             </div>
           </Section>
         )}
         <div className="space-y-3">
-          <Toggle checked={!!v.twoFactor} onChange={(x) => setV({ ...v, twoFactor: x })} label="Two-factor authentication" hint="Recommended for Admin (SEC-01)" />
+          <Toggle checked={!!v.twoFactor} onChange={(x) => setV({ ...v, twoFactor: x })} label="Two-factor authentication" hint="Recommended for Admin" />
           <Toggle checked={v.active !== false} onChange={(x) => setV({ ...v, active: x })} label="Active" hint="Disabled users cannot sign in" />
         </div>
       </div>
@@ -109,7 +111,7 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
   );
 }
 
-/* ================= Roles & permission matrix (ROLE-01/03) ================= */
+/* ================= Roles & permission matrix ================= */
 const MODS: Array<[ModuleKey, string]> = [['dashboard', 'Dashboard'], ['masters', 'Masters'], ['inventory', 'Site inventory'], ['purchase', 'Store & purchase'], ['labour', 'Labour'], ['expenses', 'Expenses'], ['fleet', 'Vehicles'], ['plant', 'Plants'], ['contract', 'Contracts & billing'], ['reports', 'Reports'], ['approvals', 'Approvals'], ['alerts', 'Alerts'], ['admin', 'Administration']];
 const PERMS: Perm[] = ['view', 'add', 'edit', 'delete', 'approve'];
 
@@ -143,7 +145,7 @@ function RolesTab() {
       </div>
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2 overflow-hidden">
-          <CardHeader title={`${role.name} — permissions`} subtitle="ROLE-01 · per module: view, add, edit, delete, approve" />
+          <CardHeader title={`${role.name} — permissions`} subtitle="per module: view, add, edit, delete, approve" />
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface-2 text-[11px] uppercase tracking-wide text-muted">
@@ -173,8 +175,8 @@ function RolesTab() {
           </div>
         </Card>
         <Card className="p-5 space-y-5 h-fit">
-          <Toggle checked={draft.ratesVisible} onChange={(x) => !locked && setDraft({ ...draft, ratesVisible: x })} label="Rates & amounts visible" hint="ROLE-03 · when off, users see quantities only" />
-          <Toggle checked={draft.allSites} onChange={(x) => !locked && setDraft({ ...draft, allSites: x })} label="All sites" hint="ROLE-02 · when off, users see only the sites assigned to them" />
+          <Toggle checked={draft.ratesVisible} onChange={(x) => !locked && setDraft({ ...draft, ratesVisible: x })} label="Rates & amounts visible" hint="when off, users see quantities only" />
+          <Toggle checked={draft.allSites} onChange={(x) => !locked && setDraft({ ...draft, allSites: x })} label="All sites" hint="when off, users see only the sites assigned to them" />
           <Field label="Approval limit" hint="Entries above this amount need someone higher">
             <NumberInput value={draft.approvalLimit === Infinity ? '' : draft.approvalLimit} onChange={(x) => setDraft({ ...draft, approvalLimit: x === '' ? Infinity : Number(x) })} prefix="₹" placeholder="No limit" disabled={locked} />
           </Field>
@@ -201,29 +203,29 @@ function SettingsTab() {
     <div className="space-y-4">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card>
-          <CardHeader title="Approval limits" subtitle="APR-01 · entries above these amounts need approval" icon={<ShieldCheck className="w-[18px] h-[18px]" />} />
+          <CardHeader title="Approval limits" subtitle="entries above these amounts need approval" icon={<ShieldCheck className="w-[18px] h-[18px]" />} />
           <div className="px-5 pb-5 grid grid-cols-2 gap-4">
             <Field label="Purchase order"><NumberInput value={v.approvalLimits.po} onChange={(x) => set('approvalLimits', { ...v.approvalLimits, po: N(x) })} prefix="₹" /></Field>
             <Field label="Material issue"><NumberInput value={v.approvalLimits.issue} onChange={(x) => set('approvalLimits', { ...v.approvalLimits, issue: N(x) })} prefix="₹" /></Field>
             <Field label="Expense"><NumberInput value={v.approvalLimits.expense} onChange={(x) => set('approvalLimits', { ...v.approvalLimits, expense: N(x) })} prefix="₹" /></Field>
             <Field label="Fuel issue"><NumberInput value={v.approvalLimits.fuel} onChange={(x) => set('approvalLimits', { ...v.approvalLimits, fuel: N(x) })} prefix="₹" /></Field>
             <div className="col-span-2">
-              <Toggle checked={v.excludePendingFromCost} onChange={(x) => set('excludePendingFromCost', x)} label="Exclude pending entries from final cost" hint="APR-03 · unapproved entries show as pending in reports" />
+              <Toggle checked={v.excludePendingFromCost} onChange={(x) => set('excludePendingFromCost', x)} label="Exclude pending entries from final cost" hint="unapproved entries show as pending in reports" />
             </div>
           </div>
         </Card>
         <Card>
-          <CardHeader title="Entry rules" subtitle="MAT-14 · ROLE-04 · LAB-05 · MAT-10" icon={<Lock className="w-[18px] h-[18px]" />} />
+          <CardHeader title="Entry rules" icon={<Lock className="w-[18px] h-[18px]" />} />
           <div className="px-5 pb-5 grid grid-cols-2 gap-4">
             <Field label="Back-dating allowed (days)" hint="Beyond this needs approval"><NumberInput value={v.backdateDays} onChange={(x) => set('backdateDays', N(x))} /></Field>
             <Field label="Lock entries after (days)" hint="Then only Admin can edit, with reason"><NumberInput value={v.editLockDays} onChange={(x) => set('editLockDays', N(x))} /></Field>
             <Field label="Attendance locks next day at" hint="24-hour clock"><NumberInput value={v.attendanceLockHour} onChange={(x) => set('attendanceLockHour', N(x))} suffix=":00" /></Field>
-            <Field label="Session timeout" hint="SEC-02"><NumberInput value={v.sessionTimeoutMin} onChange={(x) => set('sessionTimeoutMin', N(x))} suffix="min" /></Field>
-            <div className="col-span-2"><Toggle checked={v.allowNegativeOverride} onChange={(x) => set('allowNegativeOverride', x)} label="Allow Admin to override negative stock block" hint="MAT-10 · the system always warns" /></div>
+            <Field label="Session timeout"><NumberInput value={v.sessionTimeoutMin} onChange={(x) => set('sessionTimeoutMin', N(x))} suffix="min" /></Field>
+            <div className="col-span-2"><Toggle checked={v.allowNegativeOverride} onChange={(x) => set('allowNegativeOverride', x)} label="Allow Admin to override negative stock block" hint="the system always warns" /></div>
           </div>
         </Card>
         <Card>
-          <CardHeader title="Tolerances" subtitle="MAT-18 · FUEL-08 · PLT-11 — variance above these raises alerts" />
+          <CardHeader title="Tolerances" subtitle="variance above these raises alerts" />
           <div className="px-5 pb-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
             {(Object.keys(v.tolerance) as Array<keyof Settings['tolerance']>).map((k) => (
               <Field key={k} label={k[0]!.toUpperCase() + k.slice(1)}><NumberInput value={v.tolerance[k]} onChange={(x) => set('tolerance', { ...v.tolerance, [k]: N(x) })} suffix="%" /></Field>
@@ -231,7 +233,7 @@ function SettingsTab() {
           </div>
         </Card>
         <Card>
-          <CardHeader title="Valuation & allocation" subtitle="MAT-11 · EXP-05" />
+          <CardHeader title="Valuation & allocation" />
           <div className="px-5 pb-5 space-y-4">
             <Field label="Stock valuation method">
               <Segmented value={v.valuation} onChange={(x) => set('valuation', x)} options={[{ value: 'WAVG', label: 'Weighted average' }, { value: 'FIFO', label: 'FIFO' }]} />
@@ -242,22 +244,22 @@ function SettingsTab() {
           </div>
         </Card>
         <Card>
-          <CardHeader title="Notifications" subtitle="APR-02 · alerts in-app plus these channels where configured" />
+          <CardHeader title="Notifications" subtitle="alerts in-app plus these channels where configured" />
           <div className="px-5 pb-5 space-y-3">
-            <Toggle checked={v.notify.whatsapp} onChange={(x) => set('notify', { ...v.notify, whatsapp: x })} label="WhatsApp" hint="Via WhatsApp Business gateway (TEC-08)" />
+            <Toggle checked={v.notify.whatsapp} onChange={(x) => set('notify', { ...v.notify, whatsapp: x })} label="WhatsApp" hint="Via WhatsApp Business gateway" />
             <Toggle checked={v.notify.sms} onChange={(x) => set('notify', { ...v.notify, sms: x })} label="SMS" />
             <Toggle checked={v.notify.email} onChange={(x) => set('notify', { ...v.notify, email: x })} label="Email" />
           </div>
         </Card>
         <Card>
-          <CardHeader title="Financial year & data" subtitle="SEC-04 · TEC-03" icon={<DatabaseBackup className="w-[18px] h-[18px]" />} />
+          <CardHeader title="Financial year & data" icon={<DatabaseBackup className="w-[18px] h-[18px]" />} />
           <div className="px-5 pb-5 space-y-3 text-sm">
             <div className="flex justify-between"><span className="text-fg-2">Current financial year</span><b>{fyCode(today())} (1 Apr – 31 Mar)</b></div>
             <div className="flex justify-between"><span className="text-fg-2">Previous year</span><Badge tone="neutral"><Lock className="w-3 h-3" /> Closed & locked</Badge></div>
             <div className="flex justify-between"><span className="text-fg-2">Carry forward</span><span>Stock, supplier & client balances</span></div>
             <div className="flex justify-between"><span className="text-fg-2">Backups</span><span>Daily, kept 30 days (India region)</span></div>
             <div className="flex justify-between" hidden={API_MODE}><span className="text-fg-2">Changes made in this demo</span><span className="num">{journalSize()}</span></div>
-            {s.isAdmin && <Button className="w-full justify-center" onClick={() => toast.info('Year-end closing', 'In production this carries forward stock and balances and locks the closed period (SEC-04).')}>Close financial year…</Button>}
+            {s.isAdmin && <Button className="w-full justify-center" onClick={() => toast.info('Year-end closing', 'In production this carries forward stock and balances and locks the closed period.')}>Close financial year…</Button>}
           </div>
         </Card>
       </div>
@@ -270,7 +272,7 @@ function SettingsTab() {
   );
 }
 
-/* ================= Audit log (ROLE-05 / SEC-03) ================= */
+/* ================= Audit log ================= */
 function AuditTab() {
   const db = useDB();
   const n = useNames();

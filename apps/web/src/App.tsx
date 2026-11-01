@@ -24,6 +24,25 @@ const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   admin: lazy(() => import('./pages/admin/Admin')),
 };
 
+/** one screen failing must not take the whole app down; the rest of the menu keeps working */
+class ScreenBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="max-w-md mx-auto mt-16 text-center space-y-3 px-4">
+        <div className="text-lg font-semibold">This screen could not open</div>
+        <p className="text-sm text-fg-2">Your data is safe. Try again, or use another screen from the menu. If it keeps happening, tell us what you clicked.</p>
+        <p className="text-xs text-muted font-mono break-words">{this.state.error.message}</p>
+        <Button variant="primary" onClick={() => this.setState({ error: null })}>Try again</Button>
+      </div>
+    );
+  }
+}
+
 /** SEC-02: sign out after the configured idle time */
 function useIdleTimeout(minutes: number, active: boolean) {
   useEffect(() => {
@@ -92,9 +111,11 @@ export default function App() {
   return (
     <>
       <AppShell>
-        <Suspense fallback={<PageSkeleton />}>
-          <Page />
-        </Suspense>
+        <ScreenBoundary key={segs.join('/')}>
+          <Suspense fallback={<PageSkeleton />}>
+            <Page />
+          </Suspense>
+        </ScreenBoundary>
       </AppShell>
       <Toaster />
     </>

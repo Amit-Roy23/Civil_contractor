@@ -15,7 +15,8 @@
     "db:seed": "tsx src/drizzle/seed.ts",
     "db:studio": "drizzle-kit studio",
     "company:create": "node dist/v2/create-company.js",
-    "company:create:dev": "tsx src/v2/create-company.ts"
+    "company:create:dev": "tsx src/v2/create-company.ts",
+    "backup": "node dist/v2/backup-cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.750.0",

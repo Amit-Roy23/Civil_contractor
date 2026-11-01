@@ -2,6 +2,7 @@
 process.env.TZ = process.env.BUSINESS_TZ || 'Asia/Kolkata';
 
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { validateEnv } from './core/config/env.validation.js';
 import cookieParser from 'cookie-parser';
@@ -14,7 +15,9 @@ async function bootstrap() {
   // 1. Fail-fast environment validation
   validateEnv(process.env);
 
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  // Excel imports, logos and signature images are larger than the 100 KB default
+  app.useBodyParser('json', { limit: process.env.BODY_LIMIT || '10mb' });
 
   // 2. Structured logging
   const logger = app.get(Logger);

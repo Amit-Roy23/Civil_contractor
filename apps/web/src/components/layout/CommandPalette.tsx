@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@civil/domain/works';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowRight, CornerDownLeft, Search } from 'lucide-react';
@@ -42,8 +43,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       ['Prepare RA bill', '/contract/bills?new=1'],
     ];
     for (const [label, path] of entries) out.push({ label, hint: 'New entry', path, group: 'Create' });
-    for (const x of db.sites.filter((x) => s.seesSite(x.id))) out.push({ label: x.name, hint: `${x.code} · site`, path: `/contract/costing?site=${x.id}`, group: 'Sites' });
-    for (const x of db.vehicles) out.push({ label: `${x.code} ${x.regNo}`, hint: `${x.type} · ${x.make} ${x.model}`, path: `/fleet/overview?v=${x.id}`, group: 'Vehicles' });
+    for (const x of db.sites.filter((x) => s.seesSite(x.id))) out.push({ label: x.name, hint: 'work', path: `/contract/costing?site=${x.id}`, group: 'Sites' });
+    for (const x of db.vehicles) out.push({ label: vehicleLabel(x), hint: `${x.type} · ${x.make} ${x.model}`, path: `/fleet/overview?v=${x.id}`, group: 'Vehicles' });
     for (const x of db.materials) out.push({ label: x.name, hint: `${x.code} · ${x.category}`, path: `/masters/materials?q=${encodeURIComponent(x.code)}`, group: 'Materials' });
     for (const x of db.suppliers) out.push({ label: x.name, hint: `${x.code} · supplier`, path: `/purchase/suppliers?s=${x.id}`, group: 'Suppliers' });
     for (const x of db.pos.slice(-60)) out.push({ label: x.no, hint: 'Purchase order', path: `/purchase/orders?q=${encodeURIComponent(x.no)}`, group: 'Documents' });

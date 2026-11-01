@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@civil/domain/works';
 import { useMemo, useState } from 'react';
 import { CircleCheck, FileText, PackageCheck, Plus, Printer, Send, ShoppingCart, Trophy, Truck, Wallet } from 'lucide-react';
 import { useDB, insert, update, nextNo } from '../../data/store';
@@ -19,7 +20,7 @@ export default function Purchase() {
   const { tab, tabsEl } = useModuleTab('purchase');
   return (
     <div>
-      <PageHeader title="Central store & purchase" subtitle="Every unit received is matched to an order, an invoice and a payment." tags={['PUR-01…07', 'STR-01…05', 'SUP-01…03']} />
+      <PageHeader title="Central store & purchase" subtitle="Every unit received is matched to an order, an invoice and a payment." />
       {tabsEl}
       {tab === 'central' && <CentralTab />}
       {tab === 'requisitions' && <RequisitionsTab />}
@@ -54,9 +55,9 @@ function CentralTab() {
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger">
         <Stat label="Central store value" value={s.showRates ? storeValue(db, 'cs') : reg.length} format={s.showRates ? inrCompact : (x) => `${Math.round(x)} items`} icon={<PackageCheck className="w-[18px] h-[18px]" />} tone="brand" />
-        <Stat label="Reorder alerts" value={lows.length} format={(x) => `${Math.round(x)}`} icon={<ShoppingCart className="w-[18px] h-[18px]" />} tone={lows.length ? 'bad' : 'good'} sub="Below minimum level (STR-02)" />
+        <Stat label="Reorder alerts" value={lows.length} format={(x) => `${Math.round(x)}`} icon={<ShoppingCart className="w-[18px] h-[18px]" />} tone={lows.length ? 'bad' : 'good'} sub="Below minimum level" />
         <Stat label="Issues (30 days)" value={issues.filter((t) => t.date >= range.from).length} icon={<Truck className="w-[18px] h-[18px]" />} tone="info" sub="To sites, plants & vehicles" />
-        <Stat label="Slow-moving items" value={ageing.filter((a) => a.days > 90).length} icon={<FileText className="w-[18px] h-[18px]" />} tone="warn" sub="Not issued in 90+ days (STR-03)" />
+        <Stat label="Slow-moving items" value={ageing.filter((a) => a.days > 90).length} icon={<FileText className="w-[18px] h-[18px]" />} tone="warn" sub="Not issued in 90+ days" />
       </div>
       {lows.length > 0 && (
         <Callout tone="warn">
@@ -140,16 +141,16 @@ function IssueForm({ onClose }: { onClose: () => void }) {
     const valid = lines.filter((l) => l.materialId && Number(l.qty) > 0);
     if (!valid.length) return toast.error('Add materials');
     if (toKind === 'store' ? !to : !veh) return toast.error('Choose where the material goes');
-    if (linesShort(db, valid, 'cs', d)) return toast.error('Not enough stock in central store (MAT-10)');
+    if (linesShort(db, valid, 'cs', d)) return toast.error('Not enough stock in central store');
     const value = sum(valid, (l) => toBase(db, l) * avgRate(db, 'cs', l.materialId));
     const status: StockTxn['status'] = value > db.settings.approvalLimits.issue && !s.isAdmin ? 'PENDING' : toKind === 'vehicle' ? 'POSTED' : 'IN_TRANSIT';
     const no = nextNo('MIN', d);
     insert('stockTxns', { no, type: 'ISSUE', date: d, fromStoreId: 'cs', toStoreId: toKind === 'store' ? to : undefined, issueToVehicleId: toKind === 'vehicle' ? veh : undefined, lines: valid.map((l) => ({ materialId: l.materialId, qty: toBase(db, l), rate: 0, enteredQty: Number(l.qty), enteredUnit: l.unit })), vehicleNo, remark, status } as any, `Issue slip ${no}`, 'Stock voucher');
-    toast.success(`${no} saved`, status === 'PENDING' ? `Value ${inr(value)} is above the ${inr(db.settings.approvalLimits.issue)} limit — sent for approval` : status === 'IN_TRANSIT' ? 'Site must confirm receipt (MAT-01)' : 'Posted to vehicle cost (STR-05)');
+    toast.success(`${no} saved`, status === 'PENDING' ? `Value ${inr(value)} is above the ${inr(db.settings.approvalLimits.issue)} limit — sent for approval` : status === 'IN_TRANSIT' ? 'Site must confirm receipt' : 'Posted to vehicle cost');
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Issue from central store" subtitle="STR-01 · to a site, a plant, a vehicle (spares) or a department" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save issue slip</Button></>}>
+    <Drawer open onClose={onClose} title="Issue from central store" subtitle="to a site, a plant, a vehicle (spares) or a department" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save issue slip</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Date" required>
@@ -164,7 +165,7 @@ function IssueForm({ onClose }: { onClose: () => void }) {
             </Field>
           ) : (
             <Field label="Vehicle / machine" required>
-              <Combo value={veh} onChange={setVeh} options={db.vehicles.map((v) => ({ value: v.id, label: `${v.code} — ${v.regNo}`, hint: `${v.type} · ${v.make} ${v.model}` }))} />
+              <Combo value={veh} onChange={setVeh} options={db.vehicles.map((v) => ({ value: v.id, label: vehicleLabel(v), hint: `${v.type} · ${v.make} ${v.model}` }))} />
             </Field>
           )}
           <Field label="Vehicle no. (transport)">
@@ -183,7 +184,7 @@ function IssueForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ================= Requisitions (PUR-01) ================= */
+/* ================= Requisitions ================= */
 function RequisitionsTab() {
   const db = useDB();
   const s = useSession();
@@ -232,7 +233,7 @@ function RequisitionForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Material requisition" subtitle="PUR-01 · raised by a site, plant or store; approved by owner / manager" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Submit for approval</Button></>}>
+    <Drawer open onClose={onClose} title="Material requisition" subtitle="raised by a site, plant or store; approved by owner / manager" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Submit for approval</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="For store" required>
@@ -251,7 +252,7 @@ function RequisitionForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ================= Quotation comparison (PUR-02) ================= */
+/* ================= Quotation comparison ================= */
 function QuotationsTab() {
   const db = useDB();
   const s = useSession();
@@ -326,7 +327,7 @@ function QuotationForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Quotation comparison" subtitle="PUR-02 · up to 5 supplier quotes; lowest rate is highlighted" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
+    <Drawer open onClose={onClose} title="Quotation comparison" subtitle="up to 5 supplier quotes; lowest rate is highlighted" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Material" required>
@@ -366,7 +367,7 @@ function QuotationForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ================= Purchase orders (PUR-03) ================= */
+/* ================= Purchase orders ================= */
 function printPO(db: ReturnType<typeof useDB>, po: PurchaseOrder) {
   const lk = lookup(db);
   const sup = lk.supplier[po.supplierId]!;
@@ -464,7 +465,7 @@ function PoForm({ onClose, fromReq, preset }: { onClose: () => void; fromReq?: R
       open
       onClose={onClose}
       title="New purchase order"
-      subtitle="PUR-03 · supplier, items, GST, delivery location and terms"
+      subtitle="supplier, items, GST, delivery location and terms"
       footer={
         <>
           <span className="mr-auto text-sm">
@@ -493,7 +494,7 @@ function PoForm({ onClose, fromReq, preset }: { onClose: () => void; fromReq?: R
         <Section title="Lines">
           <LinesEditor lines={lines} onChange={setLines} date={today()} withRate />
         </Section>
-        {needsApproval && <Callout tone="warn">PO value is above {inr(db.settings.approvalLimits.po)} — it will go to the owner for approval (APR-01).</Callout>}
+        {needsApproval && <Callout tone="warn">PO value is above {inr(db.settings.approvalLimits.po)} — it will go to the owner for approval.</Callout>}
       </div>
     </Drawer>
   );
@@ -529,7 +530,7 @@ function PoView({ po, onClose }: { po: PurchaseOrder; onClose: () => void }) {
           {st.fullyReceived ? <Badge tone="good">Fully received</Badge> : <Badge tone="warn">Pending {qty(st.pendingQty)}</Badge>}
         </div>
         <KV items={[['Deliver to', n.store(po.deliveryStoreId)], ['Delivery terms', po.deliveryTerms], ['Payment terms', po.paymentTerms], ['Value incl. GST', <Money key="v" v={poValue(po.lines)} />]]} />
-        <Section title="Order vs received (PUR-04)">
+        <Section title="Order vs received">
           <div className="space-y-3">
             {st.lines.map((l) => (
               <div key={l.materialId} className="rounded-xl border border-line p-3">
@@ -569,7 +570,7 @@ function PoView({ po, onClose }: { po: PurchaseOrder; onClose: () => void }) {
   );
 }
 
-/* ================= GRN (PUR-04 / MAT-02) ================= */
+/* ================= GRN ================= */
 function GrnTab() {
   const db = useDB();
   const s = useSession();
@@ -639,11 +640,11 @@ function GrnForm({ onClose, po: presetPo }: { onClose: () => void; po?: Purchase
     update('pos', po.id, { status: remaining > 0.01 ? 'PARTIAL' : 'CLOSED' }, `${po.no} ${remaining > 0.01 ? 'partly' : 'fully'} received`, 'Purchase order');
     const rejected = lines.filter((l) => l.rejectedQty);
     for (const l of rejected) insert('debitNotes', { no: nextNo('DN', d), date: d, supplierId: po.supplierId, materialId: l.materialId, qty: l.rejectedQty!, rate: l.rate, reason: l.rejectReason! } as any, `Debit note for rejected ${lk.material[l.materialId]?.name}`, 'Debit note');
-    toast.success(`${no} posted`, rejected.length ? `Debit note raised for rejected quantity (PUR-07)` : remaining > 0.01 ? 'Partial delivery — PO stays open' : 'PO fully received');
+    toast.success(`${no} posted`, rejected.length ? `Debit note raised for rejected quantity` : remaining > 0.01 ? 'Partial delivery — PO stays open' : 'PO fully received');
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Goods receipt (GRN)" subtitle="PUR-04 / MAT-02 · ordered vs received vs accepted, rejected qty with reason" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<PackageCheck className="w-4 h-4" />}>Post GRN</Button></>} width="max-w-3xl">
+    <Drawer open onClose={onClose} title="Goods receipt (GRN)" subtitle="ordered vs received vs accepted, rejected qty with reason" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<PackageCheck className="w-4 h-4" />}>Post GRN</Button></>} width="max-w-3xl">
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Purchase order" required>
@@ -710,7 +711,7 @@ function GrnForm({ onClose, po: presetPo }: { onClose: () => void; po?: Purchase
   );
 }
 
-/* ================= Invoices (PUR-05) ================= */
+/* ================= Invoices ================= */
 function InvoicesTab() {
   const db = useDB();
   const s = useSession();
@@ -768,7 +769,7 @@ function InvoiceForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Book purchase invoice" subtitle="PUR-05 · matched to PO and GRN; differences in qty or rate are flagged" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Book invoice</Button></>}>
+    <Drawer open onClose={onClose} title="Book purchase invoice" subtitle="matched to PO and GRN; differences in qty or rate are flagged" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Book invoice</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="GRN" required>
@@ -801,7 +802,7 @@ function InvoiceForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-/* ================= Payments (PUR-06) ================= */
+/* ================= Payments ================= */
 function PaymentsTab() {
   const db = useDB();
   const s = useSession();
@@ -851,7 +852,7 @@ function PaymentForm({ onClose, supplierId }: { onClose: () => void; supplierId?
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Record payment" subtitle="PUR-06 · full / part / advance; bank, cheque, UPI or cash; TDS if applicable" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save payment</Button></>}>
+    <Drawer open onClose={onClose} title="Record payment" subtitle="full / part / advance; bank, cheque, UPI or cash; TDS if applicable" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save payment</Button></>}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Supplier" required className="sm:col-span-2" hint={sup ? `Balance payable ${inr(bal)}` : undefined}>
           <Combo value={sup} onChange={setSup} options={supplierOpts(db)} />
@@ -867,7 +868,7 @@ function PaymentForm({ onClose, supplierId }: { onClose: () => void; supplierId?
   );
 }
 
-/* ================= Debit notes (PUR-07) ================= */
+/* ================= Debit notes ================= */
 function DebitNotesTab() {
   const db = useDB();
   const n = useNames();
@@ -907,7 +908,7 @@ function DebitNoteForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Debit note" subtitle="PUR-07 · for rejected or excess material" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
+    <Drawer open onClose={onClose} title="Debit note" subtitle="for rejected or excess material" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label="Supplier" required className="sm:col-span-2"><Combo value={sup} onChange={setSup} options={supplierOpts(db)} /></Field>
         <Field label="Material" required className="sm:col-span-2"><Combo value={mat} onChange={(v) => (setMat(v), setRate(db.materials.find((m) => m.id === v)?.stdRate || ''))} options={materialOptions(db)} /></Field>
@@ -984,7 +985,7 @@ function PayablesTab() {
             stacked
             height={220}
             format={inrCompact}
-            data={rows.slice(0, 10).map((r) => ({ label: n.lk.supplier[r.supplierId]?.code || '', values: { b0: r.b0, b30: r.b30, b60: r.b60, b90: r.b90 } }))}
+            data={rows.slice(0, 10).map((r) => ({ label: (n.lk.supplier[r.supplierId]?.name || '').slice(0, 18), values: { b0: r.b0, b30: r.b30, b60: r.b60, b90: r.b90 } }))}
             series={[{ key: 'b0', label: '0–30' }, { key: 'b30', label: '31–60' }, { key: 'b60', label: '61–90' }, { key: 'b90', label: '90+' }]}
           />
         </div>

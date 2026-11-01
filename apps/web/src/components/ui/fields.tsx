@@ -270,7 +270,7 @@ export function DateRangePicker({ value, onChange, className }: { value: DateRan
   );
 }
 
-/** Photo / document attach (MAT-13) — demo stores only count + names; compresses images in-browser (TEC-06) */
+/** Photo / document attach — demo stores only count + names; compresses images in-browser */
 export function AttachField({ count, onChange, label = 'Photos / challan' }: { count: number; onChange: (n: number) => void; label?: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [names, setNames] = useState<string[]>([]);

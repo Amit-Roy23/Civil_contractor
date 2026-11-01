@@ -7,7 +7,7 @@ import type { Session } from './session.js';
  */
 
 /** collections every role receives in full (shared masters) */
-const SHARED: CollectionKey[] = ['sites', 'stores', 'plants', 'materials', 'suppliers', 'clients', 'subcons', 'vehicles', 'fuelSources', 'expenseHeads', 'units', 'recipes', 'roles', 'users'];
+const SHARED: CollectionKey[] = ['firms', 'sites', 'stores', 'plants', 'materials', 'suppliers', 'clients', 'subcons', 'vehicles', 'fuelSources', 'expenseHeads', 'units', 'recipes', 'roles', 'users'];
 
 export function recordInScope(db: DB, s: Session, coll: CollectionKey, r: any): boolean {
   if (SHARED.includes(coll)) return true;
@@ -79,7 +79,16 @@ const Z = { MATERIAL: 0, LABOUR: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEA
 const zeroLines = (lines: any[] | undefined, keys: string[]) => (lines || []).map((l) => ({ ...l, ...Object.fromEntries(keys.map((k) => [k, 0])) }));
 
 const MASK: Partial<Record<CollectionKey, (r: any) => any>> = {
-  sites: (r) => ({ ...r, contractValue: 0, securityDeposit: 0, budget: Z, openingCost: Z }),
+  sites: (r) => {
+    const g = (x: any) => (x ? { ...x, amount: 0 } : x);
+    return {
+      ...r, contractValue: 0, securityDeposit: 0, budget: Z, openingCost: Z, estimatedCost: r.estimatedCost === undefined ? undefined : 0, sdCeiling: r.sdCeiling === undefined ? undefined : 0,
+      emd: g(r.emd), perfSecurity: g(r.perfSecurity), addlPerfSecurity: g(r.addlPerfSecurity), advances: r.advances?.map((a: any) => ({ ...a, amount: 0 })),
+      priceAdjustment: r.priceAdjustment && { ...r.priceAdjustment, components: r.priceAdjustment.components.map((c: any) => ({ ...c, basePrice: 0 })) },
+      openingWorkDone: undefined, openingBilled: undefined, openingReceived: undefined,
+    };
+  },
+  firms: (r) => ({ ...r, banks: [] }),
   plants: (r) => ({ ...r, fixedRate: {} }),
   materials: (r) => ({ ...r, stdRate: 0 }),
   suppliers: (r) => ({ ...r, openingBalance: 0 }),
@@ -105,6 +114,8 @@ const MASK: Partial<Record<CollectionKey, (r: any) => any>> = {
 export function viewRecord(db: DB, s: Session, coll: CollectionKey, r: any): any {
   if (!recordInScope(db, s, coll, r)) return undefined;
   let v = r;
+  // ROLE-02: a work outside the user's access is only a name (needed e.g. to pick a transfer destination)
+  if (coll === 'sites' && !s.seesSite(r.id)) return { id: r.id, code: r.code, name: r.name, short: r.short, status: r.status, stage: r.stage, active: r.active, firmId: r.firmId, clientId: '', contractValue: 0, budget: Z, openingCost: Z, outOfScope: true };
   if (!s.showRates && MASK[coll]) v = MASK[coll]!(v);
   if (coll === 'users' && !s.can('admin')) v = { id: v.id, name: v.name, username: v.id === s.user.id ? v.username : '', phone: '', email: '', roleId: v.roleId, siteIds: v.siteIds, plantIds: v.plantIds, active: v.active };
   return v;

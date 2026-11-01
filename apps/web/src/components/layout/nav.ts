@@ -126,10 +126,11 @@ export const NAV: NavModule[] = [
   {
     key: 'masters', path: '/masters', label: 'Masters', short: 'Masters', icon: Database, group: 'Control',
     tabs: [
-      { key: 'sites', label: 'Sites' },
+      { key: 'sites', label: 'Works' },
+      { key: 'firms', label: 'Firms' },
+      { key: 'clients', label: 'Clients' },
       { key: 'materials', label: 'Materials' },
       { key: 'suppliers', label: 'Suppliers' },
-      { key: 'clients', label: 'Clients' },
       { key: 'subcons', label: 'Contractors' },
       { key: 'workers', label: 'Workers' },
       { key: 'vehicles', label: 'Vehicles' },
@@ -140,7 +141,7 @@ export const NAV: NavModule[] = [
       { key: 'fuel-sources', label: 'Fuel sources' },
       { key: 'expense-heads', label: 'Expense heads' },
       { key: 'units', label: 'Units' },
-      { key: 'company', label: 'Company' },
+      { key: 'import', label: 'Import & export' },
     ],
   },
   {
@@ -150,6 +151,7 @@ export const NAV: NavModule[] = [
       { key: 'roles', label: 'Roles & permissions' },
       { key: 'settings', label: 'Settings' },
       { key: 'audit', label: 'Audit log' },
+      { key: 'backups', label: 'Backups & data' },
     ],
   },
 ];

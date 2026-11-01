@@ -897,6 +897,14 @@ export function buildSeed(T: string): DB {
     version: SEED_VERSION,
     seededOn: T,
     company: { ...COMPANY, fy: fyCode(T) },
+    firms: [
+      {
+        id: 'f1', createdAt: `${M.sites[0]!.createdAt}`, createdBy: 'u1', active: true, code: 'AIP', legalName: COMPANY.name, tradeName: COMPANY.name, constitution: 'COMPANY',
+        gstin: COMPANY.gstin, pan: COMPANY.pan, tan: 'SHLA04821E', udyam: '', enlistment: { dept: 'PWD (Roads), Assam', no: 'PWD/ENL/AA/0412', cls: 'Class-I', limit: 0, validTo: '' },
+        address: COMPANY.address, places: [], contactName: 'Anupam Choudhury', phone: COMPANY.phone, email: COMPANY.email,
+        labourLicence: { no: '', authority: '', validTo: '', note: '' }, epfCode: '', esicCode: '', banks: COMPANY.banks, invoicePrefix: 'AIP/INV',
+      },
+    ],
     ...M,
     stockTxns, requisitions, quotations, pos, invoices, payments, debitNotes, attendance, advances, wageRuns, workOrders, subconBills, imprests, expenses, overheads,
     fuelPurchases, fuelIssues, dips, logs, jobCards, tyres, production, dispatches, plantCosts, stockpiles, measurements, raBills,

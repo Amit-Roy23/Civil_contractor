@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpException, Ip, Param, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, HttpException, Ip, NotFoundException, Param, ParseIntPipe, Post, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import * as argon2 from 'argon2';
 import type { AuditEntry, CollectionKey, DB } from '@civil/domain/types';
 import { applyCommand, RuleError, type Change, type Command } from '@civil/domain/policy';
@@ -7,6 +8,7 @@ import { snapshotFor, viewRecord } from '@civil/domain/visibility';
 import { V2Store } from './store.js';
 import { Ctx2, signAccess, V2Auth, V2Guard, type V2Request } from './auth.js';
 import { DemoService } from './demo.service.js';
+import { BackupService, counts } from './backup.service.js';
 import { clock, newId } from './clock.js';
 
 const str = (v: unknown, max = 200) => (typeof v === 'string' && v.length <= max ? v : '');
@@ -29,7 +31,7 @@ export class AuthV2Controller {
       const { db } = await this.store.load(demoCo.id);
       demo = { companyId: demoCo.id, users: db.users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, username: u.username, roleId: u.roleId, role: db.roles.find((r) => r.id === u.roleId)?.name, sites: u.siteIds.length })) };
     }
-    return { demo, needsCompany: list.filter((c) => !c.is_demo).length > 1 && !process.env.DEFAULT_COMPANY };
+    return { demo, needsCompany: list.filter((c) => !c.is_demo && !c.is_test).length > 1 && !process.env.DEFAULT_COMPANY, testCopies: list.some((c) => c.is_test) };
   }
 
   @Post('login')
@@ -139,6 +141,9 @@ export class DataV2Controller {
   async command(@Ctx2() c: V2Request, @Body() b: any) {
     const cmd = b?.cmd as Command;
     if (!cmd || typeof cmd !== 'object' || typeof cmd.kind !== 'string') throw new BadRequestException('Missing command');
+    // PF-03: phones send a unique id with every entry; a repeat of an id already saved is answered, not saved again
+    const cmdId = b?.cmdId === undefined ? '' : str(b.cmdId, 64);
+    if (b?.cmdId !== undefined && !/^[A-Za-z0-9_-]{8,64}$/.test(cmdId)) throw new BadRequestException('Invalid command id');
     // a new user's password never enters the data or the audit trail
     let password = '';
     if (cmd.kind === 'insert' && cmd.coll === 'users') {
@@ -163,12 +168,12 @@ export class DataV2Controller {
           changes.push({ coll: 'audit', id: rec.id, rec });
         }
         return { db: next, changes, extra: res.record };
-      });
+      }, cmdId ? { cmdId, userId } : undefined);
     } catch (e) {
       if (e instanceof RuleError) throw new HttpException({ statusCode: e.status, message: e.message }, e.status);
       throw e;
     }
-    if (password && out.extra) await this.store.setPassword(c.companyId, out.extra.id, await this.auth.hash(password));
+    if (password && out.extra && !out.replay) await this.store.setPassword(c.companyId, out.extra.id, await this.auth.hash(password));
     // answer with what this user may see of the result
     const { db } = await this.store.load(c.companyId);
     const s = buildSession(db, userId);
@@ -188,7 +193,64 @@ export class AdminV2Controller {
     private store: V2Store,
     private auth: V2Auth,
     private demo: DemoService,
+    private backups: BackupService,
   ) {}
+
+  private admin(c: V2Request) {
+    if (!c.session.isAdmin) throw new ForbiddenException('Only Admin can manage backups');
+  }
+
+  /* ---------- PF-07 backups ---------- */
+  @Get('backups')
+  async listBackups(@Ctx2() c: V2Request) {
+    this.admin(c);
+    const rows = await this.backups.list(c.companyId);
+    const copies = (await this.store.companies()).filter((x) => x.is_test).map((x) => ({ id: x.id, name: x.name }));
+    return { backups: rows.map((r) => ({ ...r, id: Number(r.id), rev: Number(r.rev) })), testCopies: copies, daily: process.env.BACKUP_DAILY !== 'off', offsite: process.env.BACKUP_S3 === 'on' };
+  }
+
+  @Post('backups')
+  @HttpCode(200)
+  async backupNow(@Ctx2() c: V2Request) {
+    this.admin(c);
+    if (c.isDemo) throw new ForbiddenException('The demo company is not backed up');
+    const r = await this.backups.create(c.companyId, 'manual');
+    return { ...r, id: Number(r.id), rev: Number(r.rev) };
+  }
+
+  @Get('backups/:id/download')
+  async download(@Ctx2() c: V2Request, @Param('id', ParseIntPipe) id: number, @Res() res: Response) {
+    this.admin(c);
+    const data = await this.backups.file(c.companyId, id);
+    if (!data) throw new NotFoundException('Backup not found');
+    res.setHeader('Content-Type', 'application/gzip');
+    res.setHeader('Content-Disposition', `attachment; filename="wcm-backup-${c.companyId}-${id}.json.gz"`);
+    res.end(data);
+  }
+
+  /** acceptance test of a backup: restore it into a separate company and compare every collection */
+  @Post('backups/:id/restore-test')
+  @HttpCode(200)
+  async restoreTest(@Ctx2() c: V2Request, @Param('id', ParseIntPipe) id: number) {
+    this.admin(c);
+    const data = await this.backups.file(c.companyId, id);
+    if (!data) throw new NotFoundException('Backup not found');
+    const b = BackupService.decode(data);
+    const code = `${c.companyId}-test-${id}`.slice(0, 30);
+    const old = await this.store.company(code);
+    if (old && !old.is_test) throw new ForbiddenException(`${code} is not a test copy`);
+    const result = await this.backups.restore(b, code, { test: true, replace: !!old, name: `${b.name} — restore test of backup ${id}` });
+    return { ...result, backupId: id, backupAt: b.createdAt, rev: b.rev, records: Object.values(counts(b.db)).reduce((s, n) => s + n, 0) };
+  }
+
+  @Delete('test-copies/:code')
+  async dropTestCopy(@Ctx2() c: V2Request, @Param('code') code: string) {
+    this.admin(c);
+    const co = await this.store.company(code);
+    if (!co?.is_test || !code.startsWith(`${c.companyId}-test-`)) throw new ForbiddenException('Only your own restore-test copies can be removed');
+    await this.store.sql`DELETE FROM wcm_companies WHERE id = ${code}`;
+    return { ok: true };
+  }
 
   @Post('users/:id/password')
   @HttpCode(200)

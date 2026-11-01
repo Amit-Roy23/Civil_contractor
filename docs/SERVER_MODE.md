@@ -63,9 +63,27 @@ apps/web  ──(same screens)──▶  data/store.ts ──▶ POST /api/v2/da
 - Environment: `VITE_DATA_MODE=api`, `VITE_API_URL=https://<your-render-app>.onrender.com/api`.
 - Leave `VITE_DATA_MODE` empty for a pure in-browser demo, which needs no server at all.
 
+## Offline use, backups and Excel (Phase 1)
+
+- **Offline (PF-03):** every change goes into an outbox on the device (IndexedDB) and is sent in order when there is network. The header shows "Offline · N unsent" or "Sending N…". Each entry carries a unique id; the server keeps a log of applied ids (`wcm_command_log`, 60 days), so a retry after a lost answer is never saved twice. The last data received is cached, so the app opens and shows data without network. A service worker (`public/sw.js`) keeps the app's own files; it never caches API data.
+- **Backups (PF-07):** each client company is backed up once a day into `wcm_backups` (kept `BACKUP_KEEP_DAYS`, default 30; set `BACKUP_DAILY=off` to stop). With `BACKUP_S3=on` a copy also goes to `BACKUP_S3_BUCKET` (or `S3_BUCKET`); this has not yet been tried against a real bucket. Administration › Backups & data offers "Back up now", download, and "Restore to a test copy", which restores into a separate company (`<code>-test-<id>`, never chosen at sign-in by default) and compares every collection. From the command line:
+  - `pnpm --filter @civil/api backup -- create --code sd`
+  - `pnpm --filter @civil/api backup -- restore --file F --code new-code`
+  - Add `--replace` only for disaster recovery.
+- **Excel (XL-04 / PF-06):** Masters › Import & export has a template, an export and an import for works (Query 1 column names), clients, suppliers, sub-contractors, materials, workers, machines, BOQ, opening stock and party balances. Every row is checked in the browser first. The server applies the whole file in one transaction (all or nothing) and reports any failure by row.
+
 ## Setting up a real client
 
 On the API server (Render shell), after a build:
+
+From a setup file of the client's own masters (firm, clients, stores, plant, machines, materials), for example Saurajit Deb:
+
+```bash
+pnpm --filter @civil/api company:create -- --code sd --from setup/saurajit-deb.json --owner-password 'choose-a-strong-one'
+# check the file first without saving:  ... --dry-run
+```
+
+Or a bare company:
 
 ```bash
 pnpm --filter @civil/api company:create -- --code acme --name "Acme Infra Pvt Ltd" \

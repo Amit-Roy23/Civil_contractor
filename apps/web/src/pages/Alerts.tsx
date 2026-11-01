@@ -31,7 +31,7 @@ export default function Alerts() {
   const ch = db.settings.notify;
   return (
     <div>
-      <PageHeader title="Alerts" subtitle={`Raised automatically from live data. Delivered in-app${ch.whatsapp ? ', on WhatsApp' : ''}${ch.sms ? ', by SMS' : ''}${ch.email ? ' and by email' : ''} where configured.`} tags={['ALT-01…07']} />
+      <PageHeader title="Alerts" subtitle={`Raised automatically from live data. Delivered in-app${ch.whatsapp ? ', on WhatsApp' : ''}${ch.sms ? ', by SMS' : ''}${ch.email ? ' and by email' : ''} where configured.`} />
       <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2 mb-4 stagger">
         {(Object.keys(CODES) as Alert['code'][]).map((c) => {
           const I = CODES[c].icon;
@@ -43,7 +43,6 @@ export default function Alerts() {
                 <span className={cn('text-lg font-bold', count ? 'text-fg' : 'text-muted')}>{count}</span>
               </div>
               <div className="text-[11px] font-semibold mt-1.5 leading-tight">{CODES[c].label}</div>
-              <div className="text-[10px] text-muted font-mono">{c}</div>
             </button>
           );
         })}
@@ -77,7 +76,6 @@ export default function Alerts() {
                     {a.siteId && <Badge>{n.site(a.siteId)}</Badge>}
                   </span>
                   <span className="block text-[13px] text-fg-2 mt-0.5">{a.detail}</span>
-                  <span className="block text-[10px] font-mono text-muted mt-1">{a.code}</span>
                 </span>
                 <ArrowRight className="w-4 h-4 text-muted mt-2 opacity-0 group-hover:opacity-100 transition-opacity" />
               </button>

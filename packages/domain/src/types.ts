@@ -23,6 +23,122 @@ export interface Company {
   banks: Array<{ bank: string; account: string; ifsc: string }>;
 }
 
+/* ---------- firms (PF-04): one login, more than one contracting firm ---------- */
+export interface BankAccount {
+  bank: string;
+  account: string;
+  ifsc: string;
+  branch?: string;
+}
+export interface Firm extends Base {
+  /** short code used in numbers, e.g. "SD" → SD/2026-27/001 */
+  code: string;
+  legalName: string;
+  /** trade name, e.g. "M/s Saurajit Deb" (plant invoices) */
+  tradeName: string;
+  constitution: 'PROPRIETOR' | 'PARTNERSHIP' | 'LLP' | 'COMPANY';
+  gstin: string;
+  gstRegType?: string;
+  gstLiableFrom?: string;
+  pan: string;
+  tan: string;
+  udyam: string;
+  enlistment: { dept: string; no: string; cls: string; limit: number; validTo: string };
+  /** principal place of business */
+  address: string;
+  /** additional places of business registered under GST */
+  places: Array<{ name: string; address: string }>;
+  contactName: string;
+  phone: string;
+  email: string;
+  labourLicence: { no: string; authority: string; validTo: string; note: string };
+  epfCode: string;
+  esicCode: string;
+  banks: BankAccount[];
+  /** small images as data URLs, printed on letters, bills and invoices */
+  logo?: string;
+  signature?: string;
+  /** e.g. "SD/INV" → SD/INV/2026-27/0001 (a new series each financial year) */
+  invoicePrefix: string;
+}
+
+/* ---------- deductions made by a client from RA bills (Query 2) ---------- */
+export interface DeductionHead {
+  head: string;
+  pct: number;
+  basis: 'GROSS' | 'TAXABLE' | 'FIXED';
+  amount?: number;
+}
+export interface DeductionProfile {
+  /** GST TDS (1% CGST + 1% SGST) on taxable value, only above the threshold contract value */
+  gstTdsPct: number;
+  gstTdsThreshold: number;
+  /** income-tax TDS (s.393(1), earlier 194C) */
+  itTdsPct: number;
+  itTdsOnGst: boolean;
+  labourCessPct: number;
+  labourCessOnGst: boolean;
+  /** kept at 0 today, can be switched on if the law changes */
+  tcsPct: number;
+  /** royalty, department material, time penalty … */
+  others: DeductionHead[];
+}
+export interface Contact {
+  designation: string;
+  name: string;
+  phone: string;
+}
+export interface ClientOffice {
+  id: ID;
+  circle: string;
+  division: string;
+  subDivision: string;
+  address: string;
+  email: string;
+  gstin: string;
+  contacts: Contact[];
+}
+
+/* ---------- works (Query 1) ---------- */
+export type WorkStage =
+  | 'BID_SUBMITTED'
+  | 'LOA_RECEIVED'
+  | 'AGREEMENT_SIGNED'
+  | 'IN_PROGRESS'
+  | 'STOPPED'
+  | 'PHYSICALLY_COMPLETE'
+  | 'FINAL_BILL_SUBMITTED'
+  | 'FINAL_BILL_PAID'
+  | 'DLP'
+  | 'SECURITY_RELEASED'
+  | 'CLOSED';
+export interface Guarantee {
+  amount: number;
+  mode: 'BG' | 'FDR' | 'EBG' | 'ONLINE' | 'EXEMPTED' | '';
+  bank: string;
+  number: string;
+  issueDate: string;
+  validity: string;
+  claimDate: string;
+}
+export interface Eot {
+  letterNo: string;
+  date: string;
+  newCompletion: string;
+  reason: string;
+}
+export interface WorkAdvance {
+  kind: 'MOBILISATION' | 'MACHINERY' | 'SECURED';
+  amount: number;
+  interestPct: number;
+  recoveryPct: number;
+}
+export interface PriceAdjustment {
+  applicable: boolean;
+  baseDate: string;
+  components: Array<{ name: string; basePrice: number; unit: string; sharePct: number }>;
+}
+
 export type SiteStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
 export interface Site extends Base {
   code: string;
@@ -47,6 +163,46 @@ export interface Site extends Base {
   /** cost incurred before go-live (data migration of opening balances) */
   openingCost: Record<CostHead, number>;
   openingAsOf: string;
+
+  /* ---- Query 1 additions (all optional so older records stay valid) ---- */
+  firmId?: ID;
+  officeId?: ID;
+  /** detailed stage; `status` is derived from it */
+  stage?: WorkStage;
+  tender?: { nitNo: string; nitDate: string; tenderId: string };
+  agreementNo?: string;
+  agreementDate?: string;
+  estimatedCost?: number;
+  quoteType?: 'ABOVE' | 'BELOW' | 'PAR' | 'ITEM_RATE';
+  quotedPct?: number;
+  /** contract value includes GST (else GST is extra) */
+  gstIncluded?: boolean;
+  district?: string;
+  subDivision?: string;
+  block?: string;
+  chainageFrom?: number;
+  chainageTo?: number;
+  lengthKm?: number;
+  timeAllowedMonths?: number;
+  eots?: Eot[];
+  clientEngineers?: Contact[];
+  supervisorName?: string;
+  emd?: Guarantee & { refundDate: string };
+  perfSecurity?: Guarantee & { pct: number };
+  addlPerfSecurity?: Guarantee;
+  /** security deposit: % per bill is `retentionPct` */
+  sdCeiling?: number;
+  dlpMonths?: number;
+  deductions?: DeductionProfile;
+  advances?: WorkAdvance[];
+  priceAdjustment?: PriceAdjustment;
+  ld?: { ratePct: number; per: 'DAY' | 'WEEK' | 'MONTH'; maxPct: number };
+  milestones?: Array<{ date: string; targetPct: number; label: string }>;
+  plantId?: ID;
+  /** figures up to go-live for running works (PF-06) */
+  openingWorkDone?: number;
+  openingBilled?: number;
+  openingReceived?: number;
 }
 
 export type StoreType = 'CENTRAL' | 'SITE' | 'PLANT';
@@ -56,6 +212,8 @@ export interface Store extends Base {
   type: StoreType;
   siteId?: ID;
   plantId?: ID;
+  address?: string;
+  holds?: string;
 }
 
 export type PlantType = 'HOT_MIX' | 'BATCHING' | 'CRUSHER' | 'WMM';
@@ -70,6 +228,17 @@ export interface Plant extends Base {
   storeId: ID;
   costMode: 'ACTUAL' | 'FIXED';
   fixedRate: Record<ID, number>; // productId -> internal rate
+  /* ---- Query 4 additions ---- */
+  subType?: 'DRUM_MIX' | 'BATCH_MIX' | '';
+  makeModel?: string;
+  consentedCapacity?: number;
+  consentRef?: string;
+  firmId?: ID;
+  /** in-charge with effective dates; the latest one applies */
+  inCharges?: Array<{ name: string; userId?: ID; from: string }>;
+  equipment?: string;
+  power?: string;
+  burnerFuel?: string;
 }
 
 export type MaterialCategory =
@@ -127,9 +296,15 @@ export interface Client extends Base {
   gstin: string;
   address: string;
   billingContact: string;
+  /** simple defaults used by billing; kept in step with `deductions` */
   tdsPct: number;
   retentionPct: number;
   cessPct: number;
+  kind?: 'GOVT' | 'LOCAL_BODY' | 'PRIVATE' | 'BUYER';
+  email?: string;
+  phone?: string;
+  offices?: ClientOffice[];
+  deductions?: DeductionProfile;
 }
 
 export interface SubContractor extends Base {
@@ -178,7 +353,17 @@ export type VehicleType =
   | 'Tanker'
   | 'Car'
   | 'Generator'
-  | 'Loader';
+  | 'Loader'
+  | 'Paver Finisher'
+  | 'Compactor'
+  | 'Mobile Hot Mix'
+  | 'Bitumen Sprayer'
+  | 'Sweeper'
+  | 'Road Cleaner'
+  | 'Marking Machine'
+  | 'Concrete Mixer'
+  | 'Tractor'
+  | 'Other';
 
 export interface VehicleDoc {
   type: 'Insurance' | 'Fitness' | 'Permit' | 'PUC' | 'Road Tax' | 'Driver Licence';
@@ -771,6 +956,7 @@ export interface DB {
   version: number;
   seededOn: string;
   company: Company;
+  firms: Firm[];
   sites: Site[];
   stores: Store[];
   plants: Plant[];

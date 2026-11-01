@@ -17,7 +17,7 @@ export default function Expenses() {
   const { tab, tabsEl } = useModuleTab('expenses');
   return (
     <div>
-      <PageHeader title="Expenses & petty cash" subtitle="Every small site expense, with a bill photo, charged to a site and an expense head." tags={['EXP-01…07']} />
+      <PageHeader title="Expenses & petty cash" subtitle="Every small site expense, with a bill photo, charged to a site and an expense head." />
       {tabsEl}
       {tab === 'entries' && <EntriesTab />}
       {tab === 'petty-cash' && <PettyCashTab />}
@@ -110,11 +110,11 @@ function ExpenseForm({ onClose }: { onClose: () => void }) {
     const no = nextNo('EXP', d);
     const status = over || rule.needsApproval ? 'PENDING' : 'APPROVED';
     insert('expenses', { no, date: d, siteId: site, headId, amount: Number(amount), paidTo, mode, billNo, remark, photo: photos > 0, status } as any, `Expense ${no} ${inr(Number(amount))}`, 'Expense');
-    toast.success(`${no} saved`, status === 'PENDING' ? `Above ${inr(limit)} — sent for approval (EXP-03)` : 'Charged to site cost');
+    toast.success(`${no} saved`, status === 'PENDING' ? `Above ${inr(limit)} — sent for approval` : 'Charged to site cost');
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Add expense" subtitle="EXP-02 · date, site, head, amount, paid to, mode, bill photo" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save expense</Button></>}>
+    <Drawer open onClose={onClose} title="Add expense" subtitle="date, site, head, amount, paid to, mode, bill photo" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save expense</Button></>}>
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Date" required><Input type="date" value={d} max={today()} onChange={(e) => setD(e.target.value)} /></Field>
@@ -128,7 +128,7 @@ function ExpenseForm({ onClose }: { onClose: () => void }) {
         <AttachField count={photos} onChange={setPhotos} label="Bill photo" />
         <Field label="Remark"><Textarea value={remark} onChange={(e) => setRemark(e.target.value)} /></Field>
         <DateRuleNote date={d} />
-        {over && <Callout tone="warn">Amount is above {inr(limit)} — it will go for approval and stays out of final cost until approved (APR-03).</Callout>}
+        {over && <Callout tone="warn">Amount is above {inr(limit)} — it will go for approval and stays out of final cost until approved.</Callout>}
       </div>
     </Drawer>
   );
@@ -151,7 +151,7 @@ function PettyCashTab() {
     if (!amt) return toast.error('Enter amount');
     const no = nextNo('IMP');
     insert('imprests', { no, date: today(), siteId: site, amount: Number(amt), kind: req, mode: 'BANK', remark: remark || (req === 'IMPREST' ? 'Imprest' : 'Top-up request'), status: req === 'IMPREST' ? 'APPROVED' : 'PENDING' } as any, `${req === 'IMPREST' ? 'Imprest' : 'Top-up request'} ${inr(Number(amt))}`, 'Petty cash');
-    toast.success(req === 'IMPREST' ? 'Cash given to site' : 'Top-up requested', req === 'IMPREST' ? undefined : 'Owner will approve (EXP-04)');
+    toast.success(req === 'IMPREST' ? 'Cash given to site' : 'Top-up requested', req === 'IMPREST' ? undefined : 'Owner will approve');
     setReq(null);
     setAmt('');
     setRemark('');
@@ -165,13 +165,13 @@ function PettyCashTab() {
         {s.can('expenses', 'approve') && s.showRates && <Button variant="primary" icon={<Wallet className="w-4 h-4" />} onClick={() => setReq('IMPREST')}>Give imprest</Button>}
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 stagger">
-        <Stat label="Cash in hand" value={bal} format={inr} tone={bal < 20000 ? 'bad' : 'good'} icon={<Wallet className="w-[18px] h-[18px]" />} sub={bal < 20000 ? 'Running low — top-up advised' : 'Imprest balance (EXP-01)'} />
+        <Stat label="Cash in hand" value={bal} format={inr} tone={bal < 20000 ? 'bad' : 'good'} icon={<Wallet className="w-[18px] h-[18px]" />} sub={bal < 20000 ? 'Running low — top-up advised' : 'Imprest balance'} />
         <Stat label="Spent this month" value={monthSpend} format={inr} tone="warn" icon={<Receipt className="w-[18px] h-[18px]" />} />
         <Stat label="Top-up requests" value={requests.filter((r) => r.status === 'PENDING').length} tone="info" icon={<HandCoins className="w-[18px] h-[18px]" />} sub={`${requests.length} raised in total`} />
       </div>
       {requests.length > 0 && (
         <Card>
-          <CardHeader title="Cash top-up requests" subtitle="EXP-04 · approved by the owner, recorded as a cash transfer" />
+          <CardHeader title="Cash top-up requests" subtitle="approved by the owner, recorded as a cash transfer" />
           <div className="px-4 pb-4 space-y-2">
             {requests.slice().reverse().map((r) => (
               <div key={r.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-line">
@@ -235,7 +235,7 @@ function OverheadsTab() {
   };
   return (
     <div className="space-y-4">
-      <Callout>Head-office overheads (rent, salaries, interest…) are allocated to sites by a chosen basis — equal share, % of contract value, % of billing, or manual (EXP-05).</Callout>
+      <Callout>Head-office overheads (rent, salaries, interest…) are allocated to sites by a chosen basis — equal share, % of contract value, % of billing, or manual.</Callout>
       <div className="flex flex-wrap gap-2">
         <Select value={month} onChange={setMonth} options={months.map((m) => ({ value: m, label: monthLabel(m) }))} className="w-40" />
         <Select value={basis} onChange={setBasis} options={[{ value: 'EQUAL', label: 'Equal share' }, { value: 'CONTRACT', label: '% of contract value' }, { value: 'BILLING', label: '% of billing' }]} className="w-56" />

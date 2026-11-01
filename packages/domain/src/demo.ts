@@ -22,7 +22,7 @@ export function buildDemoDB(today: string): DB {
 /** A blank company — used when a real client is set up (masters are then imported). */
 export function emptyDB(company: DB['company'], settings: DB['settings'], roles: DB['roles']): DB {
   return {
-    version: 1, seededOn: '', company, settings, roles,
+    version: 1, seededOn: '', company, settings, roles, firms: [],
     sites: [], stores: [], plants: [], materials: [], suppliers: [], clients: [], subcons: [], workers: [], vehicles: [], fuelSources: [], expenseHeads: [], units: [], recipes: [], boq: [],
     stockTxns: [], requisitions: [], quotations: [], pos: [], invoices: [], payments: [], debitNotes: [], attendance: [], advances: [], wageRuns: [], workOrders: [], subconBills: [],
     imprests: [], expenses: [], overheads: [], fuelPurchases: [], fuelIssues: [], dips: [], logs: [], jobCards: [], tyres: [], production: [], dispatches: [], plantCosts: [], stockpiles: [],

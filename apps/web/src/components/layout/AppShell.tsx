@@ -13,6 +13,7 @@ import {
   Search,
   Sun,
   UserCog,
+  RefreshCw,
   Wifi,
   WifiOff,
   X,
@@ -21,7 +22,7 @@ import { NAV, type NavModule } from './nav';
 import { navigate, useLocation } from '../../lib/router';
 import { setPref, usePrefs } from '../../lib/prefs';
 import { cn, initials } from '../../lib/utils';
-import { useDB, setCurrentUser, markNotificationsRead, resetDemo, useApiState } from '../../data/store';
+import { useDB, setCurrentUser, markNotificationsRead, resetDemo, syncNow, useApiState } from '../../data/store';
 import { API_MODE } from '../../data/api';
 import { approvalVisible, useSession } from '../../data/session';
 import { alerts, pendingApprovals } from '../../data/selectors';
@@ -47,7 +48,7 @@ function SitePicker({ compact }: { compact?: boolean }) {
     <div className={cn('relative flex items-center gap-2 h-10 rounded-xl border border-line bg-surface pl-3 pr-8 text-sm hover:border-line-strong transition-colors', compact ? 'max-w-[170px]' : 'max-w-[280px]')}>
       <MapPin className="w-4 h-4 text-brand-strong shrink-0" />
       <select value={siteId} onChange={(e) => setSite(e.target.value)} className="appearance-none bg-transparent w-full truncate focus:outline-none cursor-pointer font-medium text-fg" aria-label="Site filter">
-        {(s.allSites || sites.length > 1) && <option value="">{s.allSites ? 'All sites' : 'All my sites'}</option>}
+        {(s.allSites || sites.length > 1) && <option value="">{s.allSites ? 'All works' : 'All my works'}</option>}
         {sites.map((x) => (
           <option key={x.id} value={x.id}>
             {x.short}
@@ -230,7 +231,7 @@ function Notifications() {
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">{a.title}</span>
                   <span className="block text-xs text-muted truncate">
-                    {a.code} · {a.detail}
+                    {a.detail}
                   </span>
                 </span>
               </button>
@@ -283,7 +284,7 @@ function UserMenu() {
           <div className="px-4 py-3 border-b border-line">
             <div className="font-semibold text-sm">{s.user.name}</div>
             <div className="text-xs text-muted">
-              {s.role.name} · {s.allSites ? 'All sites' : `${s.siteIds.length || s.plantIds.length} assigned`}
+              {s.role.name} · {s.allSites ? 'All works' : `${s.siteIds.length || s.plantIds.length} assigned`}
             </div>
           </div>
           <div hidden={!demo} className="px-2 pt-2 text-[10px] uppercase tracking-wider text-muted font-semibold px-4">Demo: switch user / role</div>
@@ -334,6 +335,7 @@ function UserMenu() {
 }
 
 function OnlineDot() {
+  const conn = useApiState();
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
     const on = () => setOnline(true);
@@ -345,11 +347,26 @@ function OnlineDot() {
       window.removeEventListener('offline', off);
     };
   }, []);
+  // PF-03: in server mode show what is waiting on this device
+  const offline = API_MODE ? conn.offline || !online : !online;
+  const unsent = API_MODE ? conn.unsent : 0;
+  const label = offline ? (unsent ? `Offline · ${unsent} unsent` : 'Offline') : unsent ? `Sending ${unsent}…` : 'Online';
+  const title = offline
+    ? `No network — entries are kept on this device and sent automatically when the network returns${conn.syncedAt ? `. Data as of ${relTime(conn.syncedAt)}` : ''}`
+    : unsent
+      ? `${unsent} entries are being sent to the server`
+      : `All entries are saved on the server${conn.syncedAt ? ` · updated ${relTime(conn.syncedAt)}` : ''}${API_MODE ? ' · tap to refresh' : ''}`;
   return (
-    <span title={online ? 'Online' : 'Offline — entries are kept on this device and synced later'} className={cn('hidden md:inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[11px] font-semibold', online ? 'bg-good-soft text-good' : 'bg-bad-soft text-bad pulse-ring')}>
-      {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-      {online ? 'Online' : 'Offline'}
-    </span>
+    <button
+      type="button"
+      onClick={syncNow}
+      title={title}
+      aria-label={title}
+      className={cn('inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-[11px] font-semibold shrink-0', offline ? 'bg-bad-soft text-bad pulse-ring' : unsent ? 'bg-warn-soft text-warn' : 'bg-good-soft text-good', !offline && !unsent && 'hidden md:inline-flex')}
+    >
+      {offline ? <WifiOff className="w-3.5 h-3.5" /> : unsent ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
+      <span className={cn(!offline && !unsent && 'hidden md:inline')}>{label}</span>
+    </button>
   );
 }
 

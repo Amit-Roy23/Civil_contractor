@@ -1,3 +1,4 @@
+import { vehicleLabel } from '@civil/domain/works';
 import { useMemo, useState } from 'react';
 import { CircleCheck, Factory, Gauge, Plus, Truck } from 'lucide-react';
 import { useDB, insert, update, nextNo } from '../../data/store';
@@ -18,7 +19,7 @@ export default function Plant() {
   const { tab, tabsEl } = useModuleTab('plant');
   return (
     <div>
-      <PageHeader title="Production plants" subtitle="Each plant keeps its own raw-material ledger; every tonne it dispatches carries its share of raw material and running cost to the receiving site." tags={['PLT-01…16']} />
+      <PageHeader title="Production plants" subtitle="Each plant keeps its own raw-material ledger; every tonne it dispatches carries its share of raw material and running cost to the receiving site." />
       {tabsEl}
       {tab === 'overview' && <OverviewTab />}
       {tab === 'production' && <ProductionTab />}
@@ -64,7 +65,7 @@ function OverviewTab() {
             <Card key={p.id} className="p-5">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="flex items-center gap-2"><span className="font-mono text-xs px-1.5 py-0.5 rounded-md bg-surface-3">{p.code}</span><Badge tone="info">{p.type.replace('_', ' ').toLowerCase()}</Badge></div>
+                  <div className="flex items-center gap-2"><Badge tone="info">{p.type.replace('_', ' ').toLowerCase()}</Badge></div>
                   <div className="font-semibold mt-1.5">{p.name}</div>
                   <div className="text-xs text-muted">{p.capacityPerHour} {p.capacityUnit} · in-charge {n.user(p.inChargeId)}</div>
                 </div>
@@ -78,7 +79,7 @@ function OverviewTab() {
               <div className="mt-4"><ColumnChart data={trend} series={[{ key: 'q', label: 'Produced' }]} height={120} format={(x) => num(x)} /></div>
               {s.showRates && (
                 <div className="mt-3 pt-3 border-t border-line space-y-1">
-                  <div className="text-[11px] font-semibold uppercase text-muted">Cost per unit this month (PLT-14)</div>
+                  <div className="text-[11px] font-semibold uppercase text-muted">Cost per unit this month</div>
                   {unitCosts.slice(0, 4).map((c) => (
                     <div key={c.productId} className="flex justify-between text-[13px]"><span>{n.mat(c.productId)}</span><b className="num">{inr(c.unitCost)}/{n.unit(c.productId)}</b></div>
                   ))}
@@ -114,14 +115,14 @@ function ProductionTab() {
         onRowClick={setView}
         toolbar={
           <>
-            <Select value={plant} onChange={setPlant} className="w-44" options={[{ value: 'all', label: 'All plants' }, ...plants.map((p) => ({ value: p.id, label: p.code }))]} />
+            <Select value={plant} onChange={setPlant} className="w-44" options={[{ value: 'all', label: 'All plants' }, ...plants.map((p) => ({ value: p.id, label: p.name }))]} />
             {s.can('plant', 'add') && <Button variant="primary" icon={<Plus className="w-4 h-4" />} onClick={() => setForm(true)}>Production entry</Button>}
           </>
         }
         columns={[
           { key: 'no', header: 'Entry', primary: true, value: (r) => r.no, cell: (r) => <div><div className="font-mono text-[13px]">{r.no}</div><div className="text-[11px] text-muted">{date(r.date)} · {r.shift.toLowerCase()}</div></div> },
-          { key: 'plant', header: 'Plant', value: (r) => n.lk.plant[r.plantId]?.code },
-          { key: 'product', header: 'Product', value: (r) => n.mat(r.productId), cell: (r) => <div>{n.lk.plant[r.plantId]?.type === 'CRUSHER' ? 'Boulders crushed' : n.mat(r.productId)}<div className="text-[11px] text-muted">{n.lk.recipe[r.recipeId]?.code}</div></div> },
+          { key: 'plant', header: 'Plant', value: (r) => n.plant(r.plantId) },
+          { key: 'product', header: 'Product', value: (r) => n.mat(r.productId), cell: (r) => <div>{n.lk.plant[r.plantId]?.type === 'CRUSHER' ? 'Boulders crushed' : n.mat(r.productId)}<div className="text-[11px] text-muted">{n.lk.recipe[r.recipeId]?.name}</div></div> },
           { key: 'qty', header: 'Quantity', align: 'right', value: (r) => r.qty, cell: (r) => <b>{qty(r.qty, n.unit(r.productId))}</b> },
           { key: 'hours', header: 'Run hrs', align: 'right', value: (r) => r.runHours, hideMobile: true },
           { key: 'rate', header: 'Output / hr', align: 'right', value: (r) => round(r.qty / (r.runHours || 1), 1), cell: (r) => num(r.qty / (r.runHours || 1), 1), hideMobile: true },
@@ -145,7 +146,7 @@ function ProductionView({ p, onClose }: { p: Production; onClose: () => void }) 
     <Drawer open onClose={onClose} title={p.no} subtitle={`${n.lk.plant[p.plantId]?.name} · ${date(p.date)} · ${p.shift.toLowerCase()} shift`}>
       <div className="space-y-5">
         <KV items={[['Product', isCrusher ? 'Crusher run — boulders' : n.mat(p.productId)], ['Quantity', qty(p.qty, n.unit(p.productId))], ['Recipe / JMF', n.lk.recipe[p.recipeId]?.name], ['Run hours', `${p.runHours} h (${p.startMeter} → ${p.stopMeter})`], ['DG / power', `${p.dgUnits} units`], ['Fuel used', `${p.fuelUsed} L`], ['Operator', p.operator], ['Rejected', p.rejectedQty ? `${p.rejectedQty} — ${p.rejectReason}` : '—']]} />
-        <Section title={isCrusher ? 'Output split (PLT-08)' : 'Raw material — theoretical vs actual (PLT-06)'}>
+        <Section title={isCrusher ? 'Output split' : 'Raw material — theoretical vs actual'}>
           <div className="rounded-xl border border-line divide-y divide-line">
             {isCrusher
               ? (p.actual || []).map((o) => (
@@ -221,13 +222,13 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Production entry" subtitle="PLT-05 · product, quantity, run hours, meters, power, fuel, operator" width="max-w-3xl" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
+    <Drawer open onClose={onClose} title="Production entry" subtitle="product, quantity, run hours, meters, power, fuel, operator" width="max-w-3xl" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Field label="Plant" className="col-span-2"><Select value={plantId} onChange={changePlant} options={plants.map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))} /></Field>
+          <Field label="Plant" className="col-span-2"><Select value={plantId} onChange={changePlant} options={plants.map((p) => ({ value: p.id, label: p.name }))} /></Field>
           <Field label="Date"><Input type="date" value={d} max={today()} onChange={(e) => setD(e.target.value)} /></Field>
           <Field label="Shift"><Select value={shift} onChange={(x) => setShift(x as 'DAY' | 'NIGHT')} options={[{ value: 'DAY', label: 'Day' }, { value: 'NIGHT', label: 'Night' }]} /></Field>
-          <Field label={isCrusher ? 'Crusher mode' : 'Product / job mix'} className="col-span-2"><Select value={recipeId} onChange={setRecipeId} options={products.map((r) => ({ value: r.id, label: isCrusher ? r.name : `${lk.material[r.productId]?.name} — ${r.code}${r.siteId ? ` (${lk.site[r.siteId]?.short})` : ''}` }))} /></Field>
+          <Field label={isCrusher ? 'Crusher mode' : 'Product / job mix'} className="col-span-2"><Select value={recipeId} onChange={setRecipeId} options={products.map((r) => ({ value: r.id, label: isCrusher ? r.name : `${r.name}${r.siteId ? ` (${lk.site[r.siteId]?.short})` : ''}` }))} /></Field>
           <Field label={isCrusher ? 'Boulders fed' : 'Quantity produced'} required className="col-span-2"><NumberInput value={q} onChange={setQ} suffix={isCrusher ? 'MT' : unitFor(plant)} /></Field>
           <Field label="Start meter"><NumberInput value={start} onChange={setStart} suffix="h" /></Field>
           <Field label="Stop meter" required hint={stop !== '' ? `${round(Number(stop) - Number(start), 1)} run hours` : undefined}><NumberInput value={stop} onChange={setStop} suffix="h" /></Field>
@@ -237,7 +238,7 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
         </div>
         <DateRuleNote date={d} />
         {isCrusher && rec?.split ? (
-          <Section title="Output split by size (PLT-08) — yield & loss tracked">
+          <Section title="Output split by size — yield & loss tracked">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {rec.split.map((x) => (
                 <Field key={x.materialId} label={`${lk.material[x.materialId]?.name} (${x.pct}%)`}>
@@ -264,12 +265,12 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
                   );
                 })}
               </div>
-              <p className="text-xs text-muted">Both theoretical and actual figures are kept (PLT-06).</p>
+              <p className="text-xs text-muted">Both theoretical and actual figures are kept.</p>
             </Section>
           )
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Rejected / waste (PLT-09)"><NumberInput value={rej} onChange={setRej} suffix={unitFor(plant)} /></Field>
+          <Field label="Rejected / waste"><NumberInput value={rej} onChange={setRej} suffix={unitFor(plant)} /></Field>
           <Field label="Rejection reason"><Input value={rejReason} onChange={(e) => setRejReason(e.target.value)} placeholder="e.g. under-temperature batch" /></Field>
         </div>
       </div>
@@ -307,10 +308,10 @@ function DispatchTab() {
           rowClassName={(r) => (r.status === 'RETURNED' || (r.receivedQty !== undefined && ((r.qty - r.receivedQty) / r.qty) * 100 > db.settings.tolerance.dispatch) ? 'bg-bad-soft/40' : undefined)}
           columns={[
             { key: 'no', header: 'Slip', primary: true, value: (r) => r.no, cell: (r) => <div><div className="font-mono text-[13px]">{r.no}</div><div className="text-[11px] text-muted">{date(r.date)} {r.time}</div></div> },
-            { key: 'plant', header: 'Plant', value: (r) => n.lk.plant[r.plantId]?.code },
+            { key: 'plant', header: 'Plant', value: (r) => n.plant(r.plantId) },
             { key: 'product', header: 'Product', value: (r) => n.mat(r.productId) },
             { key: 'qty', header: 'Qty', align: 'right', value: (r) => r.qty, cell: (r) => <b>{qty(r.qty, n.unit(r.productId))}</b> },
-            { key: 'to', header: 'To', value: (r) => (r.siteId ? n.site(r.siteId) : r.toPlantId ? n.lk.plant[r.toPlantId]?.code : r.customer), cell: (r) => <div>{r.siteId ? n.site(r.siteId) : r.toPlantId ? `Plant ${n.lk.plant[r.toPlantId]?.code}` : <Badge tone="violet">Sale: {r.customer}</Badge>}<div className="text-[11px] text-muted">{r.chainage}</div></div> },
+            { key: 'to', header: 'To', value: (r) => (r.siteId ? n.site(r.siteId) : r.toPlantId ? n.plant(r.toPlantId) : r.customer), cell: (r) => <div>{r.siteId ? n.site(r.siteId) : r.toPlantId ? `Plant ${n.plant(r.toPlantId)}` : <Badge tone="violet">Sale: {r.customer}</Badge>}<div className="text-[11px] text-muted">{r.chainage}</div></div> },
             { key: 'veh', header: 'Vehicle', value: (r) => n.veh(r.vehicleId), hideMobile: true },
             { key: 'temp', header: 'Temp', align: 'right', value: (r) => r.temperature || '', cell: (r) => (r.temperature ? <span className={r.temperature < 125 ? 'text-bad font-semibold' : ''}>{r.temperature}°C</span> : '—'), hideMobile: true },
             { key: 'recv', header: 'Received', align: 'right', value: (r) => r.receivedQty ?? '', cell: (r) => (r.receivedQty !== undefined ? <span className={((r.qty - r.receivedQty) / r.qty) * 100 > db.settings.tolerance.dispatch ? 'text-bad font-semibold' : ''}>{qty(r.receivedQty)}</span> : '—') },
@@ -323,7 +324,7 @@ function DispatchTab() {
           rows={siteWise}
           rowKey={(r) => r.k}
           columns={[
-            { key: 'plant', header: 'Plant', value: (r) => n.lk.plant[r.plantId]?.code },
+            { key: 'plant', header: 'Plant', value: (r) => n.plant(r.plantId) },
             { key: 'to', header: 'Receiving site', primary: true, value: (r) => r.to },
             { key: 'product', header: 'Product', value: (r) => n.mat(r.productId) },
             { key: 'trips', header: 'Trips', align: 'right', value: (r) => r.trips },
@@ -364,17 +365,17 @@ function DispatchForm({ onClose }: { onClose: () => void }) {
     if (Number(q) > stock + 1e-6) return toast.error('More than produced stock in plant yard', `${qty(stock, lk.material[productId]?.unit)} available`);
     const no = nextNo(plant.type === 'HOT_MIX' ? 'DSP-H' : plant.type === 'BATCHING' ? 'DSP-R' : 'DSP-C', d);
     insert('dispatches', { no, date: d, time: new Date().toTimeString().slice(0, 5), plantId, productId, qty: Number(q), vehicleId: veh, driver: lk.vehicle[veh]?.driver, siteId: toKind === 'site' ? site : undefined, customer: toKind === 'sale' ? customer : undefined, saleRate: toKind === 'sale' ? Number(saleRate) : undefined, boqItemId: boq || undefined, chainage: chain, temperature: temp === '' ? undefined : Number(temp), weighbridgeSlip: wb, status: toKind === 'sale' ? 'RECEIVED' : 'DISPATCHED', receivedQty: toKind === 'sale' ? Number(q) : undefined } as any, `Dispatch ${no}`, 'Dispatch');
-    toast.success(`${no} issued`, toKind === 'site' ? 'Site must confirm receipt (PLT-11)' : 'Sale invoice with GST posted to customer ledger (PLT-12)');
+    toast.success(`${no} issued`, toKind === 'site' ? 'Site must confirm receipt' : 'Sale invoice with GST posted to customer ledger');
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Dispatch slip" subtitle="PLT-10 · per trip: product, qty, vehicle, driver, receiving site, BOQ / chainage, temperature, weighbridge" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<Truck className="w-4 h-4" />}>Dispatch</Button></>}>
+    <Drawer open onClose={onClose} title="Dispatch slip" subtitle="per trip: product, qty, vehicle, driver, receiving site, BOQ / chainage, temperature, weighbridge" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<Truck className="w-4 h-4" />}>Dispatch</Button></>}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Plant"><Select value={plantId} onChange={(v) => (setPlantId(v), setProductId(''))} options={plants.map((p) => ({ value: p.id, label: p.code }))} /></Field>
+          <Field label="Plant"><Select value={plantId} onChange={(v) => (setPlantId(v), setProductId(''))} options={plants.map((p) => ({ value: p.id, label: p.name }))} /></Field>
           <Field label="Product" hint={productId ? `${qty(stock, lk.material[productId]?.unit)} in yard` : undefined}><Select value={productId} onChange={setProductId} placeholder="Choose" options={products.map((m) => ({ value: m.id, label: m.name }))} /></Field>
           <Field label="Quantity" required><NumberInput value={q} onChange={setQ} suffix={lk.material[productId]?.unit} /></Field>
-          <Field label="Vehicle" required><Combo value={veh} onChange={setVeh} options={db.vehicles.filter((v) => ['Tipper', 'Transit Mixer'].includes(v.type)).map((v) => ({ value: v.id, label: `${v.code} — ${v.regNo}`, hint: v.driver }))} /></Field>
+          <Field label="Vehicle" required><Combo value={veh} onChange={setVeh} options={db.vehicles.filter((v) => ['Tipper', 'Transit Mixer'].includes(v.type)).map((v) => ({ value: v.id, label: vehicleLabel(v), hint: v.driver }))} /></Field>
         </div>
         <Segmented value={toKind} onChange={setToKind} options={[{ value: 'site', label: 'To own site' }, { value: 'sale', label: 'Sale to outside party' }]} />
         {toKind === 'site' ? (
@@ -394,7 +395,7 @@ function DispatchForm({ onClose }: { onClose: () => void }) {
         )}
         {rec && toKind === 'site' && q !== '' && (
           <Callout>
-            Raw material carried to {lk.site[site]?.short} by this load (PLT-13, {rec.code}{rec.siteId ? ', site-specific mix' : ''}): {rec.lines.map((l) => `${lk.material[l.materialId]?.name} ${qty(l.qty * Number(q), lk.material[l.materialId]?.unit)}`).join(' · ')}
+            Raw material carried to {lk.site[site]?.short} by this load ({rec.name}{rec.siteId ? ', site-specific mix' : ''}): {rec.lines.map((l) => `${lk.material[l.materialId]?.name} ${qty(l.qty * Number(q), lk.material[l.materialId]?.unit)}`).join(' · ')}
           </Callout>
         )}
       </div>
@@ -424,7 +425,7 @@ function RawTab() {
         rowKey={(r) => r.materialId}
         toolbar={
           <>
-            <Select value={plantId} onChange={setPlantId} options={plants.map((p) => ({ value: p.id, label: p.code }))} className="w-36" />
+            <Select value={plantId} onChange={setPlantId} options={plants.map((p) => ({ value: p.id, label: p.name }))} className="w-36" />
             <DateRangePicker value={range} onChange={setRange} />
             <Button onClick={() => setForm(true)} icon={<Gauge className="w-4 h-4" />}>Stockpile / dip</Button>
           </>
@@ -442,7 +443,7 @@ function RawTab() {
       />
       {piles.length > 0 && (
         <Card>
-          <CardHeader title="Stockpile & dip readings (PLT-04)" subtitle="Physical measurement vs book stock on the day" />
+          <CardHeader title="Stockpile & dip readings" subtitle="Physical measurement vs book stock on the day" />
           <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {piles.map((p) => {
               const book = availability(db, plant.storeId, p.materialId, p.date).onDate;
@@ -459,7 +460,7 @@ function RawTab() {
           </div>
         </Card>
       )}
-      <Drawer open={form} onClose={() => setForm(false)} title="Stockpile measurement / dip" subtitle="PLT-04 · daily dip for bitumen & fuel; stockpile measurement for aggregates" footer={<><Button onClick={() => setForm(false)}>Cancel</Button><Button variant="primary" onClick={() => { if (!mat || phys === '') return; insert('stockpiles', { date: today(), plantId, materialId: mat, physicalQty: Number(phys) } as any, `Stockpile ${n.mat(mat)}`, 'Stockpile'); setForm(false); toast.success('Reading saved'); }}>Save</Button></>}>
+      <Drawer open={form} onClose={() => setForm(false)} title="Stockpile measurement / dip" subtitle="daily dip for bitumen & fuel; stockpile measurement for aggregates" footer={<><Button onClick={() => setForm(false)}>Cancel</Button><Button variant="primary" onClick={() => { if (!mat || phys === '') return; insert('stockpiles', { date: today(), plantId, materialId: mat, physicalQty: Number(phys) } as any, `Stockpile ${n.mat(mat)}`, 'Stockpile'); setForm(false); toast.success('Reading saved'); }}>Save</Button></>}>
         <div className="space-y-4">
           <Field label="Material"><Select value={mat} onChange={setMat} placeholder="Choose" options={rows.map((r) => ({ value: r.materialId, label: n.mat(r.materialId) }))} /></Field>
           <Field label="Physical quantity" hint={mat ? `Book ${qty(availability(db, plant.storeId, mat, today()).onDate, n.unit(mat))}` : undefined}><NumberInput value={phys} onChange={setPhys} suffix={n.unit(mat)} /></Field>
@@ -469,7 +470,7 @@ function RawTab() {
   );
 }
 
-/* ================= Site-wise allocation (PLT-13) ================= */
+/* ================= Site-wise allocation ================= */
 function AllocationTab() {
   const db = useDB();
   const n = useNames();
@@ -487,7 +488,7 @@ function AllocationTab() {
     <div className="space-y-4">
       <div className="flex justify-end"><DateRangePicker value={range} onChange={setRange} /></div>
       <Callout>
-        For every dispatch the system allocates the raw material in that load to the receiving site, using the recipe for that site (PLT-07/13). The owner can see exactly how much bitumen, aggregate or cement went to each site through the plants.
+        For every dispatch the system allocates the raw material in that load to the receiving site, using the recipe for that site. The owner can see exactly how much bitumen, aggregate or cement went to each site through the plants.
       </Callout>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
@@ -512,7 +513,7 @@ function AllocationTab() {
         rowKey={(r) => `${r.siteId}-${r.productId}-${r.materialId}`}
         columns={[
           { key: 'site', header: 'Site', primary: true, value: (r) => n.site(r.siteId) },
-          { key: 'plant', header: 'Plant', value: (r) => n.lk.plant[r.plantId]?.code },
+          { key: 'plant', header: 'Plant', value: (r) => n.plant(r.plantId) },
           { key: 'product', header: 'Product received', value: (r) => n.mat(r.productId), cell: (r) => `${n.mat(r.productId)} — ${qty(r.productQty, n.unit(r.productId))}` },
           { key: 'mat', header: 'Raw material', value: (r) => n.mat(r.materialId) },
           { key: 'qty', header: 'Quantity', align: 'right', value: (r) => round(r.qty, 3), cell: (r) => <b>{qty(r.qty, n.unit(r.materialId))}</b> },
@@ -522,7 +523,7 @@ function AllocationTab() {
   );
 }
 
-/* ================= Cost sheet (PLT-14/15) ================= */
+/* ================= Cost sheet ================= */
 function CostTab() {
   const db = useDB();
   const s = useSession();
@@ -539,15 +540,15 @@ function CostTab() {
         <Select value={month} onChange={setMonth} options={months.map((m) => ({ value: m, label: monthLabel(m) }))} className="w-40" />
       </div>
       <Callout>
-        Plant cost per unit = (raw material + plant fuel + power + plant labour + machinery + maintenance + overhead) ÷ quantity produced (PLT-14). Each site is charged qty received × plant cost per unit, or a fixed internal rate if selected (PLT-15).
+        Plant cost per unit = (raw material + plant fuel + power + plant labour + machinery + maintenance + overhead) ÷ quantity produced. Each site is charged qty received × plant cost per unit, or a fixed internal rate if selected.
       </Callout>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {plants.map((p) => (
           <Card key={p.id} className="p-4">
             <div className="flex items-center justify-between">
-              <div className="font-semibold">{p.code}</div>
+              <div className="font-semibold">{p.name}</div>
               {s.isAdmin ? (
-                <Segmented value={p.costMode} onChange={(v) => (update('plants', p.id, { costMode: v }, `${p.code} site charging → ${v}`, 'Plant'), toast.success(v === 'FIXED' ? 'Sites charged at fixed internal rate' : 'Sites charged at actual plant cost'))} options={[{ value: 'ACTUAL', label: 'Actual' }, { value: 'FIXED', label: 'Fixed rate' }]} />
+                <Segmented value={p.costMode} onChange={(v) => (update('plants', p.id, { costMode: v }, `${p.name} site charging → ${v}`, 'Plant'), toast.success(v === 'FIXED' ? 'Sites charged at fixed internal rate' : 'Sites charged at actual plant cost'))} options={[{ value: 'ACTUAL', label: 'Actual' }, { value: 'FIXED', label: 'Fixed rate' }]} />
               ) : (
                 <Badge>{p.costMode === 'FIXED' ? 'Fixed rate' : 'Actual cost'}</Badge>
               )}
@@ -570,7 +571,7 @@ function CostTab() {
         rows={rows}
         rowKey={(r) => `${r.plantId}-${r.productId}`}
         columns={[
-          { key: 'plant', header: 'Plant', value: (r) => n.lk.plant[r.plantId]?.code },
+          { key: 'plant', header: 'Plant', value: (r) => n.plant(r.plantId) },
           { key: 'product', header: 'Product', primary: true, value: (r) => n.mat(r.productId) },
           { key: 'qty', header: 'Produced', align: 'right', value: (r) => r.qty, cell: (r) => qty(r.qty, n.unit(r.productId)) },
           { key: 'rm', header: 'Raw material', align: 'right', rate: true, value: (r) => Math.round(r.rmValue), cell: (r) => inrCompact(r.rmValue) },
@@ -583,7 +584,7 @@ function CostTab() {
   );
 }
 
-/* ================= Reconciliation (PLT-16) ================= */
+/* ================= Reconciliation ================= */
 function ReconTab() {
   const db = useDB();
   const n = useNames();
@@ -594,14 +595,14 @@ function ReconTab() {
   const rows = useMemo(() => plantReconciliation(db, plantId, month), [db, plantId, month]);
   return (
     <div className="space-y-4">
-      <Callout>Opening raw material + received − theoretical consumption − closing physical stock = <b>unexplained loss</b>, per material per month (PLT-16). Closing physical comes from the latest stockpile / dip measurement in the month, otherwise book stock.</Callout>
+      <Callout>Opening raw material + received − theoretical consumption − closing physical stock = <b>unexplained loss</b>, per material per month. Closing physical comes from the latest stockpile / dip measurement in the month, otherwise book stock.</Callout>
       <DataTable
-        title={`Plant reconciliation — ${n.lk.plant[plantId]?.code} ${monthLabel(month)}`}
+        title={`Plant reconciliation — ${n.plant(plantId)} ${monthLabel(month)}`}
         rows={rows}
         rowKey={(r) => r.materialId}
         toolbar={
           <>
-            <Select value={plantId} onChange={setPlantId} options={plants.map((p) => ({ value: p.id, label: p.code }))} className="w-36" />
+            <Select value={plantId} onChange={setPlantId} options={plants.map((p) => ({ value: p.id, label: p.name }))} className="w-36" />
             <Select value={month} onChange={setMonth} options={months.map((m) => ({ value: m, label: monthLabel(m) }))} className="w-36" />
           </>
         }

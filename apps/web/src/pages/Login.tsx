@@ -29,6 +29,7 @@ export default function Login() {
     }
   });
   const [cfg, setCfg] = useState<LoginConfig | null>(null);
+  const [askCompany, setAskCompany] = useState(false);
   const [ticket, setTicket] = useState('');
   const [otpHint, setOtpHint] = useState(API_MODE ? '' : 'Demo OTP: 123456');
   const [phone, setPhone] = useState('');
@@ -209,7 +210,7 @@ export default function Login() {
                   submit();
                 }}
               >
-                {API_MODE && cfg?.needsCompany && (
+                {API_MODE && (cfg?.needsCompany || askCompany) && (
                   <Field label="Company code" hint="Given by your administrator">
                     <Input value={company} onChange={(e) => setCompany(e.target.value)} autoCapitalize="none" autoComplete="organization" />
                   </Field>
@@ -235,6 +236,9 @@ export default function Login() {
                     )}
                     {!otpSent && err && <p className="text-xs text-bad">{err}</p>}
                   </>
+                )}
+                {API_MODE && cfg && !cfg.needsCompany && !askCompany && (
+                  <button type="button" className="text-xs text-muted hover:text-fg" onClick={() => setAskCompany(true)}>Sign in to another company (company code)</button>
                 )}
                 <Button type="submit" variant="primary" size="lg" className="w-full justify-center" loading={busy} icon={mode === 'otp' ? <Smartphone className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}>
                   {mode === 'otp' && !otpSent ? 'Send OTP' : 'Sign in'}

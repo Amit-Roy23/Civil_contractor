@@ -6,6 +6,8 @@ import { availability, avgRate, productionUse } from './ledger.js';
 import { poStatus, validateMeter, wageFor } from './selectors.js';
 import { daysBetween, fyCode } from './format.js';
 import { round, sum } from './utils.js';
+import { clientDeductions, stageStatus, timeAllowedMonths } from './works.js';
+import { templateById, type ImportOp } from './imports.js';
 
 /**
  * Server-authoritative business rules. Every change from the web app arrives as a Command;
@@ -19,7 +21,8 @@ export type Command =
   | { kind: 'decide'; coll: CollectionKey; id: ID; decision: 'APPROVED' | 'REJECTED' | 'SENT_BACK'; remark?: string }
   | { kind: 'settings'; patch: Record<string, unknown>; reason?: string }
   | { kind: 'company'; patch: Record<string, unknown> }
-  | { kind: 'markRead' };
+  | { kind: 'markRead' }
+  | { kind: 'import'; template: string; ops: ImportOp[] };
 
 export type Change =
   | { coll: CollectionKey; id: ID; rec: any }
@@ -61,10 +64,10 @@ const fail = (msg: string, status: 400 | 403 | 404 | 409 = 400): never => {
 
 /* ---------------- collection metadata ---------------- */
 
-const MASTER: CollectionKey[] = ['sites', 'stores', 'plants', 'materials', 'suppliers', 'clients', 'subcons', 'workers', 'vehicles', 'fuelSources', 'expenseHeads', 'units', 'recipes'];
+const MASTER: CollectionKey[] = ['firms', 'sites', 'stores', 'plants', 'materials', 'suppliers', 'clients', 'subcons', 'workers', 'vehicles', 'fuelSources', 'expenseHeads', 'units', 'recipes'];
 
 const MODULE: Record<CollectionKey, ModuleKey> = {
-  sites: 'masters', stores: 'masters', plants: 'masters', materials: 'masters', suppliers: 'masters', clients: 'masters', subcons: 'masters', workers: 'masters',
+  firms: 'masters', sites: 'masters', stores: 'masters', plants: 'masters', materials: 'masters', suppliers: 'masters', clients: 'masters', subcons: 'masters', workers: 'masters',
   vehicles: 'masters', fuelSources: 'masters', expenseHeads: 'masters', units: 'masters', recipes: 'masters', boq: 'contract',
   stockTxns: 'inventory', requisitions: 'purchase', quotations: 'purchase', pos: 'purchase', invoices: 'purchase', payments: 'purchase', debitNotes: 'purchase',
   attendance: 'labour', advances: 'labour', wageRuns: 'labour', workOrders: 'labour', subconBills: 'labour',
@@ -123,7 +126,7 @@ function checkStock(ctx: Ctx, db: DB, store: ID, lines: Array<{ materialId: ID; 
     const av = availability(db, store, m, d);
     if (q > av.onDate + 1e-6 || q > av.minAfter + 1e-6) {
       const mat = find(db, 'materials', m);
-      fail(`Not enough ${mat?.name || m} in ${find(db, 'stores', store)?.name || store}: available ${round(Math.min(av.onDate, av.minAfter), 3)} ${mat?.unit || ''}, needed ${round(q, 3)} (MAT-10)`, 409);
+      fail(`Not enough ${mat?.name || m} in ${find(db, 'stores', store)?.name || store}: available ${round(Math.min(av.onDate, av.minAfter), 3)} ${mat?.unit || ''}, needed ${round(q, 3)}`, 409);
     }
   }
 }
@@ -133,7 +136,7 @@ function checkNoNegative(ctx: Ctx, db: DB, keys: Array<{ store: ID; materialId: 
   if (ctx.session.isAdmin && ctx.db.settings.allowNegativeOverride) return;
   for (const k of keys) {
     const av = availability(db, k.store, k.materialId, k.date);
-    if (av.minAfter < -1e-6 || av.onDate < -1e-6) fail(`This would make ${find(db, 'materials', k.materialId)?.name} at ${find(db, 'stores', k.store)?.name} negative — the material has already been used (MAT-10)`, 409);
+    if (av.minAfter < -1e-6 || av.onDate < -1e-6) fail(`This would make ${find(db, 'materials', k.materialId)?.name} at ${find(db, 'stores', k.store)?.name} negative — the material has already been used`, 409);
   }
 }
 
@@ -175,7 +178,7 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
   const isMaster = MASTER.includes(coll);
   if (coll === 'boq') need(s.can('contract', 'add') || s.can('masters', 'add'), 'Your role cannot add BOQ items', 403);
   else requirePerm(s, MODULE[coll], 'add');
-  if (MONEY.includes(coll)) need(s.showRates, 'Your role cannot see rates and amounts (ROLE-03)', 403);
+  if (MONEY.includes(coll)) need(s.showRates, 'Your role cannot see rates and amounts', 403);
 
   const r = parse(coll, { ...serverOwned(coll, raw), ...raw, id: raw.id || ctx.newId() });
   need(!find(db, coll, r.id), 'Duplicate record id', 409);
@@ -183,10 +186,16 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
   r.createdBy = s.user.id;
   if (isMaster || coll === 'boq') r.active = r.active ?? true;
   const out: Result = { db, changes: [], audit: [] };
+  if (coll === 'sites') prepareWork(ctx, out, r);
+  checkRefs(db, coll, r);
 
   if (isMaster) {
     if ('code' in r) need(!(db[coll] as any[]).some((x) => x.code?.toLowerCase() === String(r.code).toLowerCase()), `Code ${r.code} already exists`, 409);
     if (coll === 'stores') need(r.type !== 'CENTRAL' || !db.stores.some((x) => x.type === 'CENTRAL'), 'There is already a central store');
+    if (coll === 'stores' && r.type === 'SITE') {
+      need(!!find(db, 'sites', r.siteId), 'A site store must be linked to a work');
+      need(!db.stores.some((x) => x.type === 'SITE' && x.siteId === r.siteId), 'This work already has a site store — it was created with the work', 409);
+    }
   }
 
   switch (coll) {
@@ -451,8 +460,101 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
   out.db = put(out.db, coll, r);
   out.changes.push({ coll, id: r.id, rec: r });
   out.audit.push({ action: 'CREATE', entity: coll, entityId: r.id, label: `${label(coll, r)} created`, after: r });
+  // Query 3: every work gets its own site store automatically
+  if (coll === 'sites' && !out.db.stores.some((x) => x.type === 'SITE' && x.siteId === r.id)) {
+    let n = out.db.stores.length + 1;
+    while (out.db.stores.some((x) => x.code === `SS-${String(n).padStart(3, '0')}`)) n++;
+    const store = { id: ctx.newId(), createdAt: ctx.now, createdBy: s.user.id, active: true, code: `SS-${String(n).padStart(3, '0')}`, name: `Site Store — ${r.short}`, type: 'SITE', siteId: r.id };
+    out.db = put(out.db, 'stores', store);
+    out.changes.push({ coll: 'stores', id: store.id, rec: store });
+    out.audit.push({ action: 'CREATE', entity: 'stores', entityId: store.id, label: `${store.name} created with the work`, after: store });
+  }
   out.record = r;
   return out;
+}
+
+/** links between masters must point at records that exist */
+const REFS: Partial<Record<CollectionKey, Array<[string, CollectionKey]>>> = {
+  workers: [['siteId', 'sites'], ['contractorId', 'subcons']],
+  vehicles: [['siteId', 'sites'], ['ownerSupplierId', 'suppliers']],
+  fuelSources: [['siteId', 'sites'], ['supplierId', 'suppliers']],
+  stores: [['siteId', 'sites'], ['plantId', 'plants']],
+  plants: [['storeId', 'stores'], ['firmId', 'firms']],
+  sites: [['engineerId', 'users'], ['plantId', 'plants']],
+  boq: [['siteId', 'sites'], ['recipeId', 'recipes']],
+  materials: [['unit', 'units']],
+};
+function checkRefs(db: DB, coll: CollectionKey, r: any) {
+  for (const [k, target] of REFS[coll] || []) if (r[k]) need((db[target] as any[]).some((x) => x.id === r[k]), `${k.replace(/Id$/, '')}: not found in ${target}`);
+}
+
+/** Excel import (XL-04 / PF-06): every row is applied with the normal rules, all or nothing */
+function importRows(ctx: Ctx, templateId: string, ops: ImportOp[]): Result {
+  const t = templateById(templateId);
+  need(t, 'Unknown import template');
+  need(Array.isArray(ops) && ops.length > 0, 'Nothing to import');
+  need(ops.length <= 5000, 'At most 5,000 rows in one import — split the file');
+  if (t!.adminOnly) need(ctx.session.isAdmin, `Only Admin can import ${t!.title.toLowerCase()}`, 403);
+  let db = ctx.db;
+  const changes: Change[] = [];
+  const audit: AuditDraft[] = [];
+  for (const op of ops) {
+    need(op.coll === t!.coll || (t!.id === 'party-balances' && (op.coll === 'suppliers' || op.coll === 'subcons')), 'Row does not match the template');
+    try {
+      const r = op.kind === 'insert' ? insert({ ...ctx, db }, op.coll, op.rec || {}) : update({ ...ctx, db }, op.coll, String(op.id), op.patch || {}, `Excel import: ${t!.title}`);
+      db = r.db;
+      changes.push(...r.changes);
+      audit.push(...r.audit);
+    } catch (e) {
+      if (e instanceof RuleError) throw new RuleError(`Row ${op.row}: ${e.message} — nothing was imported`, e.status);
+      throw e;
+    }
+  }
+  audit.push({ action: 'CREATE', entity: 'Import', entityId: templateId, label: `Excel import: ${ops.length} ${t!.title.toLowerCase()} rows` });
+  return { db, changes, audit, record: { imported: ops.length } };
+}
+
+/** works master (Query 1): firm, work code, deductions profile and status from stage */
+function prepareWork(ctx: Ctx, out: Result, r: any) {
+  const db = ctx.db;
+  const client = find(db, 'clients', r.clientId);
+  need(client, 'Choose the client / department');
+  if (r.officeId) need((client.offices || []).some((o: any) => o.id === r.officeId), 'Office does not belong to this client');
+  if (db.firms.length) {
+    r.firmId = r.firmId || db.firms[0]!.id;
+    need(!!find(db, 'firms', r.firmId), 'Choose the firm that holds the contract');
+  }
+  if (r.plantId) need(!!find(db, 'plants', r.plantId), 'Unknown plant');
+  r.short = (r.short || '').trim() || String(r.name).slice(0, 40);
+  if (!String(r.code || '').trim()) {
+    const firm = find(db, 'firms', r.firmId);
+    const prefix = firm?.code || 'W';
+    const fy = fyCode(r.workOrderDate || r.agreementDate || r.startDate || ctx.today);
+    const key = `WORK:${prefix}:${fy}`;
+    let n = (out.db.seq[key] || 0) + 1;
+    while (db.sites.some((x) => x.code === `${prefix}/${fy}/${String(n).padStart(3, '0')}`)) n++;
+    out.db = { ...out.db, seq: { ...out.db.seq, [key]: n } };
+    out.changes.push({ single: 'seq', value: out.db.seq });
+    r.code = `${prefix}/${fy}/${String(n).padStart(3, '0')}`;
+  }
+  // deductions differ per work: start from the client's defaults, editable afterwards
+  r.deductions ||= clientDeductions(client);
+  r.retentionPct ??= client.retentionPct;
+  syncStage(r);
+  if (!r.timeAllowedMonths) r.timeAllowedMonths = timeAllowedMonths(r) || undefined;
+}
+
+function syncStage(r: any, before?: any) {
+  if (r.stage && (!before || r.stage !== before.stage)) r.status = stageStatus(r.stage);
+  else if (before && r.status !== before.status) r.stage = r.status === 'ACTIVE' ? 'IN_PROGRESS' : r.status === 'ON_HOLD' ? 'STOPPED' : 'PHYSICALLY_COMPLETE';
+  else if (!r.stage) r.stage = r.status === 'ACTIVE' ? 'IN_PROGRESS' : r.status === 'ON_HOLD' ? 'STOPPED' : 'PHYSICALLY_COMPLETE';
+}
+
+/** Query 3 rule 5: a site store's balance goes back to the godown (or is written off) before the work closes */
+function storeBalances(db: DB, storeId: ID, onDate: string) {
+  return db.materials
+    .map((m) => ({ m, q: availability(db, storeId, m.id, onDate).onDate }))
+    .filter((x) => Math.abs(x.q) > 1e-6);
 }
 
 function insertStockTxn(ctx: Ctx, out: Result, r: StockTxn) {
@@ -534,14 +636,14 @@ function insertStockTxn(ctx: Ctx, out: Result, r: StockTxn) {
       break;
     case 'WASTAGE':
       need(from && s.seesStore(from.id), 'Store not in your access', 403);
-      need(r.reason, 'Reason is required (MAT-07)');
+      need(r.reason, 'Reason is required');
       r.toStoreId = undefined;
       checkStock(ctx, db, from!.id, r.lines, r.date);
       r.status = 'PENDING';
       break;
     case 'ADJUSTMENT':
       need(from && s.seesStore(from.id), 'Store not in your access', 403);
-      need(r.reason, 'Reason is required (MAT-08)');
+      need(r.reason, 'Reason is required');
       r.toStoreId = undefined;
       r.lines = r.lines.map((l) => {
         need(Math.abs(l.qty) > 1e-9, 'No difference to adjust');
@@ -555,7 +657,7 @@ function insertStockTxn(ctx: Ctx, out: Result, r: StockTxn) {
   }
   if (r.type !== 'OPENING' && r.type !== 'GRN') r.lines = r.lines.map((l) => ({ ...l, rate: 0 }));
   if (r.type === 'OPENING' && !s.showRates) fail('Opening stock needs rate visibility', 403);
-  if (late) r.remark = `Back-dated by ${daysBetween(r.date, ctx.today)} days — needs approval (MAT-14)`;
+  if (late) r.remark = `Back-dated by ${daysBetween(r.date, ctx.today)} days — needs approval`;
   r.no = allocate(ctx, out, STOCK_PREFIX[r.type]!, r.date);
 }
 
@@ -582,7 +684,7 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
       requirePerm(s, 'fleet', 'edit');
       only(['status', 'docs', 'lastServiceAt']);
     } else if (coll === 'plants' && keys.every((k) => k === 'costMode' || k === 'fixedRate')) {
-      need(s.isAdmin, 'Only Admin can change how sites are charged (PLT-15)', 403);
+      need(s.isAdmin, 'Only Admin can change how sites are charged', 403);
     } else if (coll === 'roles' || coll === 'users') {
       requirePerm(s, 'admin', 'edit');
       if (coll === 'roles') need(before.id !== 'owner', 'The Owner / Admin role cannot be changed', 403);
@@ -601,6 +703,23 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
     after = parse(coll, { ...before, ...Object.fromEntries(keys.map((k) => [k, patch[k]])) });
     after.createdAt = before.createdAt;
     after.createdBy = before.createdBy;
+    checkRefs(db, coll, after);
+    if (coll === 'sites') {
+      syncStage(after, before);
+      if (after.firmId) need(!!find(db, 'firms', after.firmId), 'Unknown firm');
+      const store = db.stores.find((x) => x.type === 'SITE' && x.siteId === id);
+      if (after.stage === 'CLOSED' && before.stage !== 'CLOSED' && store) {
+        const left = storeBalances(db, store.id, ctx.today);
+        need(!left.length, `Before closing, transfer the site store balance back to the central godown or write it off: ${left.slice(0, 4).map((x) => `${x.m.name} ${round(x.q, 3)} ${x.m.unit}`).join(', ')}${left.length > 4 ? ` and ${left.length - 4} more` : ''}`, 409);
+        need(!db.stockTxns.some((t) => t.status === 'IN_TRANSIT' && (t.toStoreId === store.id || t.fromStoreId === store.id)), 'A transfer to or from this site store is still in transit', 409);
+        need(!db.stockTxns.some((t) => t.status === 'PENDING' && t.fromStoreId === store.id), 'A wastage / adjustment of this site store is waiting for approval', 409);
+      }
+      if (store && (after.stage === 'CLOSED') !== (store.active === false)) {
+        const st = { ...store, active: after.stage !== 'CLOSED' };
+        out.db = put(out.db, 'stores', st);
+        out.changes.push({ coll: 'stores', id: st.id, rec: st });
+      }
+    }
     // a role that sees masked (zeroed) money fields must not write them back
     if (!s.showRates && !keys.every((k) => ['status', 'docs', 'lastServiceAt', 'active'].includes(k))) fail('Your role cannot edit records that carry rates', 403);
   } else {
@@ -618,7 +737,7 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
           // SEC-03: cancel with reason, never delete
           only(['status']);
           need(s.isAdmin, 'Only Admin can cancel a posted voucher', 403);
-          need(reason && reason.trim(), 'Reason is required to cancel (SEC-03)');
+          need(reason && reason.trim(), 'Reason is required to cancel');
           need(['POSTED', 'APPROVED', 'IN_TRANSIT', 'PENDING'].includes(before.status), 'This voucher cannot be cancelled');
           after = { ...before, status: 'CANCELLED' };
           const trial = put(db, coll, after);
@@ -673,8 +792,8 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
       case 'attendance':
         only(['status', 'otHours', 'headcount', 'photo', 'gps']);
         requirePerm(s, 'labour', 'edit');
-        need(!isLocked(ctx, before.date) || s.isAdmin, `Attendance for ${before.date} is locked (LAB-05)`, 403);
-        if (isLocked(ctx, before.date)) need(reason, 'Reason is required to change locked attendance (ROLE-04)');
+        need(!isLocked(ctx, before.date) || s.isAdmin, `Attendance for ${before.date} is locked`, 403);
+        if (isLocked(ctx, before.date)) need(reason, 'Reason is required to change locked attendance');
         after = parse(coll, { ...before, ...patch });
         after.createdAt = before.createdAt;
         after.createdBy = before.createdBy;
@@ -692,7 +811,7 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
           const received = sum(receipts, (r: any) => r.amount);
           after = { ...before, receipts, status: received >= c - 1 ? 'PAID' : 'PARTLY_PAID' };
         } else {
-          need(next[before.status] === patch.status, 'Status change not allowed (BIL-04)');
+          need(next[before.status] === patch.status, 'Status change not allowed');
           after = { ...before, status: patch.status };
         }
         break;
@@ -772,7 +891,7 @@ function decide(ctx: Ctx, coll: CollectionKey, id: ID, decision: 'APPROVED' | 'R
   need(before.status === 'PENDING', 'This entry is not waiting for approval', 409);
   requirePerm(s, 'approvals', 'approve');
   need(approvalVisible(s, { module: DECIDE_MODULE[coll]!, siteId: approvalSite(db, coll, before) }), 'This approval is not for your role', 403);
-  if (decision !== 'APPROVED') need(remark.trim(), 'A remark is required to reject or send back (APR-02)');
+  if (decision !== 'APPROVED') need(remark.trim(), 'A remark is required to reject or send back');
   need(before.createdBy !== s.user.id || s.isAdmin, 'You cannot approve your own entry', 403);
   const amount = approvalAmount(db, coll, before);
   if (decision === 'APPROVED') need(amount <= s.role.approvalLimit, `Amount is above your approval limit`, 403);
@@ -851,6 +970,8 @@ export function applyCommand(ctx: Ctx, cmd: Command): Result {
       }
       return { db, changes, audit: [] };
     }
+    case 'import':
+      return importRows(ctx, cmd.template, cmd.ops);
     default:
       return fail('Unknown command');
   }

@@ -8,6 +8,7 @@ import { decide, useDB } from '../data/store';
 import { useSession } from '../data/session';
 import { availability, avgRate } from '../data/ledger';
 import { lookup } from '../data/selectors';
+import { clientShort, vehicleName } from '@civil/domain/works';
 import type { CollectionKey, DB, ID, Material, ModuleKey } from '../data/types';
 import { daysBetween, inr, qty as fq, today } from '../lib/format';
 import { cn, round } from '../lib/utils';
@@ -70,12 +71,14 @@ export function useNames() {
     mat: (id?: ID) => (id ? lk.material[id]?.name || id : '—'),
     unit: (id?: ID) => (id ? lk.material[id]?.unit || '' : ''),
     sup: (id?: ID) => (id ? lk.supplier[id]?.name || id : '—'),
-    veh: (id?: ID) => (id ? lk.vehicle[id]?.code || id : '—'),
+    veh: (id?: ID) => (id ? vehicleName(lk.vehicle[id]) || id : '—'),
+    plant: (id?: ID) => (id ? lk.plant[id]?.name || id : '—'),
+    client: (id?: ID) => (id ? clientShort(lk.client[id]) || id : '—'),
     user: (id?: ID) => (id ? lk.user[id]?.name || id : '—'),
   };
 }
 
-/** stores the current user may post to (ROLE-02) */
+/** stores the current user may post to */
 export function useStoreOptions(types: Array<'CENTRAL' | 'SITE' | 'PLANT'> = ['CENTRAL', 'SITE', 'PLANT']) {
   const db = useDB();
   const s = useSession();
@@ -196,7 +199,7 @@ export function LinesEditor({
                     {av.minAfter < av.onDate - 1e-6 ? ` · later min ${fq(av.minAfter, m?.unit)}` : ''}
                   </Badge>
                 )}
-                {short && <span className="text-bad font-medium">Stock cannot go negative (MAT-10)</span>}
+                {short && <span className="text-bad font-medium">Stock cannot go negative</span>}
                 {checkStock && storeId && m && s.showRates && base > 0 && <span className="text-muted">≈ {inr(base * avgRate(db, storeId, m.id))} at avg rate</span>}
               </div>
             )}

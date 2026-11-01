@@ -87,6 +87,25 @@ export interface CommandResult {
   changes: ServerChange[];
 }
 
+export interface BackupInfo {
+  id: number;
+  created_at: string;
+  kind: 'daily' | 'manual';
+  size: number;
+  rev: number;
+  records: number;
+}
+export interface RestoreCheck {
+  company: string;
+  ok: boolean;
+  mismatches: string[];
+  expected: Record<string, number>;
+  actual: Record<string, number>;
+  backupId: number;
+  backupAt: string;
+  records: number;
+}
+
 export const api = {
   config: () => call<LoginConfig>('/auth/config'),
   login: (username: string, password: string, company?: string) => call<SignedIn | OtpNeeded>('/auth/login', { username, password, company }),
@@ -96,7 +115,19 @@ export const api = {
   changePassword: (current: string, next: string) => call<{ ok: true }>('/auth/password', { current, next }),
   snapshot: () => call<Snapshot>('/data/snapshot'),
   rev: () => call<{ rev: number }>('/data/rev'),
-  command: (cmd: unknown) => call<CommandResult>('/data/commands', { cmd }),
+  /** cmdId makes a retry safe: the server answers a repeated id with the first result */
+  command: (cmd: unknown, cmdId?: string) => call<CommandResult>('/data/commands', { cmd, cmdId }),
   setUserPassword: (userId: ID, password: string) => call<{ ok: true }>(`/admin/users/${encodeURIComponent(userId)}/password`, { password }),
   resetDemo: () => call<{ ok: true }>('/admin/reset-demo', {}),
+  backups: () => call<{ backups: BackupInfo[]; testCopies: Array<{ id: string; name: string }>; daily: boolean; offsite: boolean }>('/admin/backups'),
+  backupNow: () => call<BackupInfo>('/admin/backups', {}),
+  restoreTest: (id: number) => call<RestoreCheck>(`/admin/backups/${id}/restore-test`, {}),
+  dropTestCopy: (code: string) => call<{ ok: true }>(`/admin/test-copies/${encodeURIComponent(code)}`, undefined, 'DELETE'),
+  downloadBackup: async (id: number): Promise<Blob> => {
+    const res = await fetch(`${BASE}/admin/backups/${id}/download`, { headers: { authorization: `Bearer ${token}` } }).catch(() => {
+      throw new ApiError('Cannot reach the server', 0);
+    });
+    if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status);
+    return res.blob();
+  },
 };

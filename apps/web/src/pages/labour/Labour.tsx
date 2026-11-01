@@ -20,7 +20,7 @@ export default function Labour() {
   const { tab, tabsEl } = useModuleTab('labour');
   return (
     <div>
-      <PageHeader title="Labour" subtitle="Daily labour cost per site — own rolls, labour contractors and piece-rate sub-contractors." tags={['LAB-01…13']} />
+      <PageHeader title="Labour" subtitle="Daily labour cost per site — own rolls, labour contractors and piece-rate sub-contractors." />
       {tabsEl}
       {tab === 'attendance' && <AttendanceTab />}
       {tab === 'daily' && <DailyTab />}
@@ -89,7 +89,8 @@ function MarkAttendance() {
     }
     setMarks(m);
     const h = existing.filter((a) => a.contractorId).map((a) => ({ contractorId: a.contractorId!, trade: a.trade || 'Helper', headcount: a.headcount || 0, ot: a.otHours || 0 }));
-    setHeads(h.length ? h : [{ contractorId: db.subcons.find((c) => c.kind === 'LABOUR_CONTRACTOR')!.id, trade: 'Helper', headcount: '', ot: '' }]);
+    const lc = db.subcons.find((c) => c.kind === 'LABOUR_CONTRACTOR' && c.active !== false);
+    setHeads(h.length ? h : lc ? [{ contractorId: lc.id, trade: 'Helper', headcount: '', ot: '' }] : []);
     setPhoto(existing.some((a) => a.photo));
     setGps(existing.find((a) => a.gps)?.gps || '');
   }, [site, d, existing.length]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -108,7 +109,7 @@ function MarkAttendance() {
   };
 
   const save = () => {
-    if (locked) return toast.error('Attendance is locked', `Entries lock at ${db.settings.attendanceLockHour}:00 the next day (LAB-05). Ask Admin.`);
+    if (locked) return toast.error('Attendance is locked', `Entries lock at ${db.settings.attendanceLockHour}:00 the next day. Ask Admin.`);
     for (const w of crew) {
       const m = marks[w.id];
       if (!m) continue;
@@ -142,7 +143,7 @@ function MarkAttendance() {
           <div className="rounded-xl bg-surface-2 border border-line px-3 py-2"><div className="text-[11px] text-muted">Day’s cost</div><div className="text-lg font-bold"><Money v={cost} /></div></div>
         </div>
       </Card>
-      {locked && <Callout tone="warn" icon={<Lock className="w-4 h-4" />}>Attendance for {date(d)} is locked (LAB-05). Only Admin can edit with a reason.</Callout>}
+      {locked && <Callout tone="warn" icon={<Lock className="w-4 h-4" />}>Attendance for {date(d)} is locked. Only Admin can edit with a reason.</Callout>}
 
       <Card>
         <CardHeader title="Own labour" subtitle="Tap to cycle Present → Half-day → Absent. OT hours per worker." icon={<Users className="w-[18px] h-[18px]" />} action={<Button size="sm" variant="ghost" onClick={() => setMarks(Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, { ...v, status: 'P' }])))}>All present</Button>} />
@@ -174,7 +175,7 @@ function MarkAttendance() {
           })}
         </div>
         <div className="px-3 sm:px-5 pb-4 flex flex-col sm:flex-row gap-2 sm:items-end">
-          <Field label="Worker from another site (LAB-04)" className="sm:w-80">
+          <Field label="Worker from another site" className="sm:w-80">
             <Combo value={addWorker} onChange={setAddWorker} options={otherWorkers} placeholder="Add shifted worker" />
           </Field>
           <Button disabled={!addWorker || locked} onClick={() => { insert('attendance', { date: d, siteId: site, workerId: addWorker, status: 'P', otHours: 0 } as any, `Shifted worker ${lk.worker[addWorker]?.name} to ${lk.site[site]?.short}`, 'Attendance'); setAddWorker(''); toast.success('Worker added — day cost goes to this site'); }}>
@@ -184,7 +185,7 @@ function MarkAttendance() {
       </Card>
 
       <Card>
-        <CardHeader title="Contractor labour — headcount by trade" subtitle='LAB-02 · e.g. "Ramesh Contractor: 6 masons, 12 helpers"' />
+        <CardHeader title="Contractor labour — headcount by trade" subtitle='e.g. "Ramesh Contractor: 6 masons, 12 helpers"' />
         <div className="px-3 sm:px-5 pb-4 space-y-2">
           {heads.map((h, i) => {
             const set = (p: Partial<typeof h>) => setHeads(heads.map((x, j) => (j === i ? { ...x, ...p } : x)));
@@ -205,7 +206,7 @@ function MarkAttendance() {
               </div>
             );
           })}
-          <Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setHeads([...heads, { contractorId: heads[0]?.contractorId || 'sc1', trade: 'Mason', headcount: '', ot: '' }])} disabled={locked}>
+          <Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setHeads([...heads, { contractorId: heads[0]?.contractorId || db.subcons.find((c) => c.kind === 'LABOUR_CONTRACTOR' && c.active !== false)?.id || '', trade: 'Mason', headcount: '', ot: '' }])} disabled={locked || !db.subcons.some((c) => c.kind === 'LABOUR_CONTRACTOR')} title={db.subcons.some((c) => c.kind === 'LABOUR_CONTRACTOR') ? undefined : 'Add a labour contractor in Masters first'}>
             Add trade
           </Button>
         </div>
@@ -214,7 +215,7 @@ function MarkAttendance() {
       <Card className="p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
         <div className="flex gap-2 flex-wrap">
           <Button icon={<Camera className="w-4 h-4" />} variant={photo ? 'success' : 'secondary'} onClick={() => setPhoto(true)}>
-            {photo ? 'Gang photo attached' : 'Gang photo (LAB-03)'}
+            {photo ? 'Gang photo attached' : 'Gang photo'}
           </Button>
           <Button icon={<MapPin className="w-4 h-4" />} variant={gps ? 'success' : 'secondary'} onClick={captureGps}>
             {gps ? `GPS ${gps}` : 'Capture GPS & time'}
@@ -353,7 +354,7 @@ function DailyTab() {
   );
 }
 
-/* ================= Wages (LAB-06/08) ================= */
+/* ================= Wages ================= */
 function WagesTab() {
   const db = useDB();
   const s = useSession();
@@ -408,7 +409,7 @@ function WageForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Generate wage sheet" subtitle="LAB-06 · days × daily rate + OT hours × OT rate − advances − deductions" width="max-w-3xl" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Generate</Button></>}>
+    <Drawer open onClose={onClose} title="Generate wage sheet" subtitle="days × daily rate + OT hours × OT rate − advances − deductions" width="max-w-3xl" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Generate</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Field label="Site" className="col-span-2 sm:col-span-1"><Select value={site} onChange={setSite} options={sites.map((x) => ({ value: x.id, label: x.short }))} /></Field>
@@ -484,13 +485,13 @@ function WageView({ run, onClose }: { run: WageRun; onClose: () => void }) {
         </div>
       </div>
       <Modal open={pay} onClose={() => setPay(false)} title="Record wage payment" footer={<><Button onClick={() => setPay(false)}>Cancel</Button><Button variant="primary" onClick={() => (update('wageRuns', r.id, { status: 'PAID', paidMode: mode as any }, `${r.no} paid`, 'Wage run'), setPay(false), toast.success('Wages marked paid', `${inr(sum(r.lines, (l) => l.net))} by ${mode}`))}>Mark paid</Button></>}>
-        <Field label="Payment mode (LAB-08)"><Select value={mode} onChange={setMode} options={[{ value: 'CASH', label: 'Cash' }, { value: 'BANK', label: 'Bank transfer' }, { value: 'UPI', label: 'UPI' }]} /></Field>
+        <Field label="Payment mode"><Select value={mode} onChange={setMode} options={[{ value: 'CASH', label: 'Cash' }, { value: 'BANK', label: 'Bank transfer' }, { value: 'UPI', label: 'UPI' }]} /></Field>
       </Modal>
     </Drawer>
   );
 }
 
-/* ================= Advances (LAB-07) ================= */
+/* ================= Advances ================= */
 function AdvancesTab() {
   const db = useDB();
   const s = useSession();
@@ -526,7 +527,7 @@ function AdvancesTab() {
           { key: 'amt', header: 'Amount', align: 'right', rate: true, value: (r) => r.amount, cell: (r) => <b>{inr(r.amount)}</b> },
         ]}
       />
-      <Drawer open={form} onClose={() => setForm(false)} title="Give advance" subtitle="LAB-07 · recovered in later wage runs / contractor bills" footer={<><Button onClick={() => setForm(false)}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
+      <Drawer open={form} onClose={() => setForm(false)} title="Give advance" subtitle="recovered in later wage runs / contractor bills" footer={<><Button onClick={() => setForm(false)}>Cancel</Button><Button variant="primary" onClick={save}>Save</Button></>}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Advance to"><Segmented value={to} onChange={(v) => (setTo(v), setWho(''))} options={[{ value: 'worker', label: 'Worker' }, { value: 'contractor', label: 'Contractor' }]} /></Field>
           <Field label={to === 'worker' ? 'Worker' : 'Contractor'} required>
@@ -541,7 +542,7 @@ function AdvancesTab() {
   );
 }
 
-/* ================= Contractor ledgers (LAB-09) ================= */
+/* ================= Contractor ledgers ================= */
 function ContractorsTab() {
   const db = useDB();
   const [c, setC] = useState('sc1');
@@ -571,7 +572,7 @@ function ContractorsTab() {
   );
 }
 
-/* ================= Sub-contract (LAB-10/11/12) ================= */
+/* ================= Sub-contract ================= */
 function SubcontractTab() {
   const db = useDB();
   const s = useSession();
@@ -643,7 +644,7 @@ function SubcontractTab() {
                     <div key={l.boqItemId} className="px-3 py-2 flex justify-between text-sm"><span>{n.lk.boq[l.boqItemId]?.description}<div className="text-[11px] text-muted">{qty(l.qty, n.lk.boq[l.boqItemId]?.unit)} × ₹{l.rate}</div></span><b className="num"><Money v={l.qty * l.rate} /></b></div>
                   ))}
                 </div>
-                <KV cols={2} items={[['Gross', <Money key="g" v={c.gross} />], [`Retention ${wo.retentionPct}%`, <Money key="r" v={-c.retention} />], [`TDS ${wo.tdsPct}%`, <Money key="t" v={-c.tds} />], ['Material recovery (LAB-12)', <Money key="m" v={-viewBill.materialRecovery} />], ['Advance recovery', <Money key="a" v={-viewBill.advanceRecovery} />], ['Penalty', <Money key="p" v={-viewBill.penalty} />], ['Net payable', <b key="n"><Money v={c.net} /></b>]]} />
+                <KV cols={2} items={[['Gross', <Money key="g" v={c.gross} />], [`Retention ${wo.retentionPct}%`, <Money key="r" v={-c.retention} />], [`TDS ${wo.tdsPct}%`, <Money key="t" v={-c.tds} />], ['Material recovery', <Money key="m" v={-viewBill.materialRecovery} />], ['Advance recovery', <Money key="a" v={-viewBill.advanceRecovery} />], ['Penalty', <Money key="p" v={-viewBill.penalty} />], ['Net payable', <b key="n"><Money v={c.net} /></b>]]} />
                 {viewBill.status === 'PENDING' && s.can('approvals', 'approve') && (
                   <div className="flex gap-2 justify-end">
                     <DecideButtons coll="subconBills" id={viewBill.id} label={viewBill.no} onDone={() => setViewBill(null)} />
@@ -677,7 +678,7 @@ function WorkOrderForm({ onClose }: { onClose: () => void }) {
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title="Work order to sub-contractor" subtitle="LAB-10 · site, BOQ items, qty, rate, dates" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Issue work order</Button></>}>
+    <Drawer open onClose={onClose} title="Work order to sub-contractor" subtitle="site, BOQ items, qty, rate, dates" footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Issue work order</Button></>}>
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Sub-contractor" required><Combo value={sc} onChange={setSc} options={db.subcons.filter((x) => x.kind === 'SUB_CONTRACTOR').map((x) => ({ value: x.id, label: x.name, hint: x.trade }))} /></Field>
@@ -728,7 +729,7 @@ function SubconBillForm({ wo, onClose }: { wo: WorkOrder; onClose: () => void })
     onClose();
   };
   return (
-    <Drawer open onClose={onClose} title={`Bill — ${n.lk.subcon[wo.subContractorId]?.name}`} subtitle="LAB-11 · qty done × rate − material, advance, retention, TDS, penalties" footer={<><span className="mr-auto text-sm">Net <b><Money v={c.net} /></b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Submit bill</Button></>}>
+    <Drawer open onClose={onClose} title={`Bill — ${n.lk.subcon[wo.subContractorId]?.name}`} subtitle="qty done × rate − material, advance, retention, TDS, penalties" footer={<><span className="mr-auto text-sm">Net <b><Money v={c.net} /></b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save}>Submit bill</Button></>}>
       <div className="space-y-5">
         <Section title={`Measured since ${date(last)}`}>
           {wo.lines.map((l) => (
@@ -739,7 +740,7 @@ function SubconBillForm({ wo, onClose }: { wo: WorkOrder; onClose: () => void })
           ))}
         </Section>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="Material recovery" hint={`Excess over norm in period ≈ ${inr(excess)} (LAB-12)`}><NumberInput value={mat} onChange={setMat} prefix="₹" /></Field>
+          <Field label="Material recovery" hint={`Excess over norm in period ≈ ${inr(excess)}`}><NumberInput value={mat} onChange={setMat} prefix="₹" /></Field>
           <Field label="Advance recovery"><NumberInput value={adv} onChange={setAdv} prefix="₹" /></Field>
           <Field label="Penalty"><NumberInput value={pen} onChange={setPen} prefix="₹" /></Field>
         </div>
@@ -749,7 +750,7 @@ function SubconBillForm({ wo, onClose }: { wo: WorkOrder; onClose: () => void })
   );
 }
 
-/* ================= Compliance (LAB-13) ================= */
+/* ================= Compliance ================= */
 function ComplianceTab() {
   const db = useDB();
   const rows = db.subcons;

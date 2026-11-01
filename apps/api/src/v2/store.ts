@@ -18,6 +18,8 @@ export interface CompanyRow {
   id: string;
   name: string;
   is_demo: boolean;
+  /** a backup restored to check it (PF-07) — never chosen by default at sign-in */
+  is_test: boolean;
 }
 
 interface Cached {
@@ -50,6 +52,7 @@ export class V2Store implements OnModuleInit {
         rev bigint NOT NULL DEFAULT 0,
         created_at timestamptz NOT NULL DEFAULT now()
       );
+      ALTER TABLE wcm_companies ADD COLUMN IF NOT EXISTS is_test boolean NOT NULL DEFAULT false;
       CREATE TABLE IF NOT EXISTS wcm_records (
         company_id text NOT NULL REFERENCES wcm_companies(id) ON DELETE CASCADE,
         coll text NOT NULL,
@@ -75,6 +78,15 @@ export class V2Store implements OnModuleInit {
         updated_at timestamptz NOT NULL DEFAULT now(),
         PRIMARY KEY (company_id, user_id)
       );
+      -- PF-03: commands already applied, so a retry from a phone that lost the answer is not saved twice
+      CREATE TABLE IF NOT EXISTS wcm_command_log (
+        company_id text NOT NULL REFERENCES wcm_companies(id) ON DELETE CASCADE,
+        cmd_id text NOT NULL,
+        user_id text NOT NULL,
+        result jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (company_id, cmd_id)
+      );
       CREATE TABLE IF NOT EXISTS wcm_otps (
         company_id text NOT NULL,
         user_id text NOT NULL,
@@ -85,26 +97,27 @@ export class V2Store implements OnModuleInit {
         PRIMARY KEY (company_id, user_id, purpose)
       );
     `);
+    await this.sql`DELETE FROM wcm_command_log WHERE created_at < now() - interval '60 days'`;
   }
 
   /* ---------------- companies ---------------- */
 
   async companies(): Promise<CompanyRow[]> {
-    return this.sql<CompanyRow[]>`SELECT id, name, is_demo FROM wcm_companies ORDER BY created_at`;
+    return this.sql<CompanyRow[]>`SELECT id, name, is_demo, is_test FROM wcm_companies ORDER BY created_at`;
   }
 
   async company(id: string): Promise<CompanyRow | undefined> {
-    const [c] = await this.sql<CompanyRow[]>`SELECT id, name, is_demo FROM wcm_companies WHERE id = ${id}`;
+    const [c] = await this.sql<CompanyRow[]>`SELECT id, name, is_demo, is_test FROM wcm_companies WHERE id = ${id}`;
     return c;
   }
 
   /** replace a company's whole dataset (create company / reset demo) */
-  async replaceAll(id: string, name: string, isDemo: boolean, db: DB) {
+  async replaceAll(id: string, name: string, isDemo: boolean, db: DB, opts: { test?: boolean } = {}) {
     await this.withLock(id, async () => {
       await this.sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtext(${'wcm:' + id}))`;
-        await tx`INSERT INTO wcm_companies (id, name, is_demo) VALUES (${id}, ${name}, ${isDemo})
-                 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_demo = EXCLUDED.is_demo`;
+        await tx`INSERT INTO wcm_companies (id, name, is_demo, is_test) VALUES (${id}, ${name}, ${isDemo}, ${!!opts.test})
+                 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_demo = EXCLUDED.is_demo, is_test = EXCLUDED.is_test`;
         await tx`DELETE FROM wcm_records WHERE company_id = ${id}`;
         await tx`DELETE FROM wcm_singletons WHERE company_id = ${id}`;
         const rows: Array<{ company_id: string; coll: string; id: string; data: unknown }> = [];
@@ -157,11 +170,19 @@ export class V2Store implements OnModuleInit {
    * Run `fn` against the latest data with the company locked (in this process and in Postgres),
    * persist what it changed and bump the revision.
    */
-  async write<T>(id: string, fn: (db: DB) => { db: DB; changes: Change[]; extra?: T }): Promise<{ rev: number; changes: Change[]; extra?: T }> {
+  async write<T>(
+    id: string,
+    fn: (db: DB) => { db: DB; changes: Change[]; extra?: T },
+    once?: { cmdId: string; userId: string },
+  ): Promise<{ rev: number; changes: Change[]; extra?: T; replay?: boolean }> {
     return this.withLock(id, () =>
       this.sql.begin(async (tx) => {
         await tx`SELECT pg_advisory_xact_lock(hashtext(${'wcm:' + id}))`;
         const [meta] = await tx<{ rev: string }[]>`SELECT rev FROM wcm_companies WHERE id = ${id}`;
+        if (once) {
+          const [done] = await tx<{ result: any; user_id: string }[]>`SELECT result, user_id FROM wcm_command_log WHERE company_id = ${id} AND cmd_id = ${once.cmdId}`;
+          if (done && done.user_id === once.userId) return { next: null, out: { rev: Number(meta!.rev), changes: done.result.changes as Change[], extra: done.result.extra as T, replay: true } };
+        }
         let cur = this.cache.get(id);
         if (!cur || cur.rev !== Number(meta!.rev)) cur = await this.reload(id, tx);
         const res = fn(cur.db);
@@ -178,11 +199,12 @@ export class V2Store implements OnModuleInit {
           await tx`INSERT INTO wcm_singletons (company_id, key, data) VALUES (${id}, ${k}, ${tx.json(jsonSafe(v) as any)})
                    ON CONFLICT (company_id, key) DO UPDATE SET data = EXCLUDED.data`;
         const [{ rev }] = (await tx<{ rev: string }[]>`UPDATE wcm_companies SET rev = rev + 1 WHERE id = ${id} RETURNING rev`) as any;
+        if (once) await tx`INSERT INTO wcm_command_log (company_id, cmd_id, user_id, result) VALUES (${id}, ${once.cmdId}, ${once.userId}, ${tx.json(jsonSafe({ changes: res.changes, extra: res.extra }) as any)})`;
         // only publish the new state once the transaction is certain to commit
         const next = { rev: Number(rev), db: res.db };
         return { next, out: { rev: Number(rev), changes: res.changes, extra: res.extra } };
       }).then(({ next, out }) => {
-        this.cache.set(id, next);
+        if (next) this.cache.set(id, next);
         return out;
       }),
     );
