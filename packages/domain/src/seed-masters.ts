@@ -335,7 +335,7 @@ export function buildMasters(T: string) {
         workers.push({
           ...base(`w${String(wn).padStart(3, '0')}`, D(rng.ri(120, 700))), code: `WK-${String(1000 + wn)}`, name,
           phone: `+91 9${rng.ri(100000000, 999999999)}`, aadhaar: `XXXX-XXXX-${rng.ri(1000, 9999)}`, trade, wageRate: wage, otRate: Math.round((wage / 8) * 1.5),
-          ownership: 'OWN', siteId: s.id, upi: `${name.split(' ')[0]!.toLowerCase()}${rng.ri(10, 99)}@sbi`, joiningDate: D(rng.ri(120, 900)),
+          ownership: 'OWN', esiMember: true, siteId: s.id, upi: `${name.split(' ')[0]!.toLowerCase()}${rng.ri(10, 99)}@sbi`, joiningDate: D(rng.ri(120, 900)),
         });
       }
     }

@@ -1,5 +1,6 @@
 import { vehicleLabel, vehicleName } from '@civil/domain/works';
 import { useMemo, useState } from 'react';
+import { HireOutTab } from './HireOut';
 import { CircleCheck, Droplets, FileWarning, Fuel, Gauge, Plus, Route, Truck, Wrench } from 'lucide-react';
 import { useDB, insert, update, nextNo } from '../../data/store';
 import { useSession } from '../../data/session';
@@ -26,6 +27,7 @@ export default function Fleet() {
       {tab === 'logbook' && <LogbookTab />}
       {tab === 'efficiency' && <EfficiencyTab />}
       {tab === 'hire' && <HireTab />}
+      {tab === 'hire-out' && <HireOutTab />}
       {tab === 'maintenance' && <MaintenanceTab />}
       {tab === 'documents' && <DocumentsTab />}
       {tab === 'cost' && <CostTab />}
@@ -200,7 +202,7 @@ function FuelForm({ onClose }: { onClose: () => void }) {
   const pick = (id: string) => {
     setVid(id);
     const x = lk.vehicle[id]!;
-    setSite(x.siteId || 's1');
+    setSite(x.siteId || db.sites.find((y) => s.seesSite(y.id) && y.status === 'ACTIVE')?.id || '');
     setSrc(db.fuelSources.find((f) => f.siteId === x.siteId)?.id || 'fs1');
     setReading('');
   };
@@ -385,6 +387,10 @@ function LogForm({ onClose }: { onClose: () => void }) {
   const [split, setSplit] = useState(false);
   const [site2, setSite2] = useState('');
   const [share, setShare] = useState<number | ''>(50);
+  const [mode, setMode] = useState<'simple' | 'trips' | 'hired'>('simple');
+  const blankTrip = () => ({ siteId: site, material: mat, from: '', to: '', qty: '' as number | '', unit: 'MT', chainage: '' });
+  const [tripRows, setTripRows] = useState<Array<ReturnType<typeof blankTrip>>>([]);
+  const [fuelL, setFuelL] = useState<number | ''>('');
   const pick = (id: string) => {
     setVid(id);
     const x = lk.vehicle[id]!;
@@ -400,7 +406,10 @@ function LogForm({ onClose }: { onClose: () => void }) {
     if (!v || open === '' || close === '') return toast.error('Vehicle and opening / closing readings are required');
     if (Number(close) < Number(open)) return toast.error('Closing reading cannot be less than opening');
     const isHr = v.meterType === 'HOURS';
-    const rec: Partial<LogEntry> = { date: d, vehicleId: vid, siteId: site, driver: v.driver, trips: Number(trips) || 0, route: routeTxt || 'Within site', material: mat || undefined, materialQty: Number(matQty) || undefined, idleHours: Number(idle) || 0, idleReason: reason || undefined, ...(isHr ? { openHr: Number(open), closeHr: Number(close) } : { openKm: Number(open), closeKm: Number(close) }), split: split && site2 ? [{ siteId: site, share: Number(share) / 100 }, { siteId: site2, share: 1 - Number(share) / 100 }] : undefined };
+    if (mode === 'trips' && !tripRows.length) return toast.error('Add at least one trip');
+    if (mode === 'trips' && tripRows.some((r) => !r.siteId)) return toast.error('Every trip needs its work');
+    const rec0: Partial<LogEntry> = { date: d, vehicleId: vid, siteId: site, driver: v.driver, trips: Number(trips) || 0, route: routeTxt || 'Within site', material: mat || undefined, materialQty: Number(matQty) || undefined, idleHours: Number(idle) || 0, idleReason: reason || undefined, ...(isHr ? { openHr: Number(open), closeHr: Number(close) } : { openKm: Number(open), closeKm: Number(close) }), split: mode === 'simple' && split && site2 ? [{ siteId: site, share: Number(share) / 100 }, { siteId: site2, share: 1 - Number(share) / 100 }] : undefined };
+    const rec = { ...rec0, fuelLitres: fuelL === '' ? undefined : Number(fuelL), hiredOut: mode === 'hired' || undefined, tripRows: mode === 'trips' ? tripRows.map((r) => ({ ...r, qty: Number(r.qty) || 0 })) : undefined, source: 'MANUAL' };
     insert('logs', rec as any, `Logbook ${vehicleName(v)} ${d}`, 'Logbook');
     toast.success('Logbook saved', split ? 'Cost split between the two sites' : undefined);
     onClose();
@@ -421,8 +430,30 @@ function LogForm({ onClose }: { onClose: () => void }) {
           <Field label="Idle hours"><NumberInput value={idle} onChange={setIdle} suffix="h" /></Field>
           <Field label="Idle reason"><Select value={reason || ''} onChange={(x) => setReason(x as LogEntry['idleReason'])} options={[{ value: '', label: '—' }, ...['Breakdown', 'No work', 'Rain', 'No operator'].map((x) => ({ value: x, label: x }))]} /></Field>
         </div>
-        <Toggle checked={split} onChange={setSplit} label="Worked at two sites today" hint="Hours / km and cost are split in this ratio" />
-        {split && (
+        <Field label="Fuel used (from telematics / dip)"><NumberInput value={fuelL} onChange={setFuelL} suffix="L" /></Field>
+        <Segmented value={mode} onChange={setMode} options={[{ value: 'simple', label: 'Work at site' }, { value: 'trips', label: 'Trip by trip' }, { value: 'hired', label: 'Hired out to others' }]} />
+        {mode === 'hired' && <Callout tone="info">Hired out: no cost is charged to any work — bill the party in Hire-out bills.</Callout>}
+        {mode === 'trips' && (
+          <Section title="Trips" action={<Button size="sm" icon={<Plus className="w-4 h-4" />} onClick={() => setTripRows([...tripRows, blankTrip()])}>Add trip</Button>}>
+            <div className="space-y-2">
+              {tripRows.map((r, i) => {
+                const set = (p: Partial<typeof r>) => setTripRows(tripRows.map((x, j) => (j === i ? { ...x, ...p } : x)));
+                return (
+                  <div key={i} data-trip className="grid grid-cols-2 sm:grid-cols-6 gap-2 items-end rounded-xl border border-line p-2">
+                    <Field label={`Trip ${i + 1} work`} className="col-span-2"><Select value={r.siteId} onChange={(v) => set({ siteId: v })} placeholder="Work" options={db.sites.filter((x) => s.seesSite(x.id) && !(x as any).outOfScope).map((x) => ({ value: x.id, label: x.short }))} /></Field>
+                    <Field label="Material"><Input value={r.material} onChange={(e) => set({ material: e.target.value })} placeholder="GSB" /></Field>
+                    <Field label="Qty"><NumberInput value={r.qty} onChange={(v) => set({ qty: v })} suffix={r.unit} /></Field>
+                    <Field label="From → to"><Input value={r.from} onChange={(e) => set({ from: e.target.value })} placeholder="Quarry" /></Field>
+                    <Field label="Chainage"><Input value={r.chainage} onChange={(e) => set({ chainage: e.target.value, to: e.target.value })} placeholder="Ch 2+100" /></Field>
+                  </div>
+                );
+              })}
+              {!tripRows.length && <p className="text-sm text-muted">Each trip names the work it was for; the day's running cost and fuel are shared by trips.</p>}
+            </div>
+          </Section>
+        )}
+        {mode === 'simple' && <Toggle checked={split} onChange={setSplit} label="Worked at two sites today" hint="Hours / km and cost are split in this ratio" />}
+        {mode === 'simple' && split && (
           <div className="grid grid-cols-2 gap-4 anim-pop">
             <Field label="Second site"><Select value={site2} onChange={setSite2} placeholder="Choose" options={db.sites.filter((x) => x.id !== site).map((x) => ({ value: x.id, label: x.short }))} /></Field>
             <Field label={`Share at ${lk.site[site]?.short}`}><NumberInput value={share} onChange={setShare} suffix="%" /></Field>

@@ -279,10 +279,51 @@ export const TEMPLATES: ImportTemplate[] = [
       { header: 'Wage per day', key: 'wageRate', type: 'number', required: true },
       { header: 'OT rate per hour', key: 'otRate', type: 'number' },
       { header: 'Work', key: 'siteId', required: true, ...ref('sites', ['code', 'short', 'name'], 'short') },
-      { header: 'Bank / UPI', key: 'upi' },
+      { header: 'UPI', key: 'upi' },
       { header: 'Joining date', key: 'joiningDate', type: 'date' },
+      { header: "Father's / husband's name", key: 'fatherName' },
+      { header: 'Gender', key: 'gender', type: 'enum', options: opts(['M', 'Male'], ['F', 'Female'], ['O', 'Other']) },
+      { header: 'Date of birth', key: 'dob', type: 'date' },
+      { header: 'Bank account no.', key: 'bankAccount' },
+      { header: 'IFSC', key: 'ifsc' },
+      { header: 'EPF member', key: 'pfMember', type: 'bool' },
+      { header: 'UAN', key: 'uan', hint: '12 digits' },
+      { header: 'ESI member', key: 'esiMember', type: 'bool' },
+      { header: 'ESIC IP no.', key: 'esicNo' },
     ],
     rows: (db) => db.workers,
+  },
+  {
+    // FLT-03: daily km / engine hours / fuel from the Tata Fleet Edge "trip summary" export
+    id: 'fleet-edge',
+    title: 'Fleet Edge logbook',
+    coll: 'logs',
+    description: 'Daily vehicle summary exported from Fleet Edge (or any telematics): one row per vehicle per day. The work is the vehicle\'s current work unless given.',
+    columns: [
+      { header: 'Vehicle number', key: 'vehicleId', required: true, ...ref('vehicles', ['regNo', 'code'], 'regNo') },
+      { header: 'Date', key: 'date', type: 'date', required: true },
+      { header: 'Start odometer', key: 'openKm', type: 'number' },
+      { header: 'End odometer', key: 'closeKm', type: 'number' },
+      { header: 'Start engine hours', key: 'openHr', type: 'number' },
+      { header: 'End engine hours', key: 'closeHr', type: 'number' },
+      { header: 'Fuel consumed (L)', key: 'fuelLitres', type: 'number' },
+      { header: 'Idle hours', key: 'idleHours', type: 'number' },
+      { header: 'Work', key: 'siteId', ...ref('sites', ['code', 'short', 'name'], 'short') },
+    ],
+    toOps: (db, rows, errors) =>
+      rows.flatMap(({ row, rec }) => {
+        const v = db.vehicles.find((x) => x.id === rec.vehicleId);
+        const siteId = rec.siteId || v?.siteId;
+        if (!siteId) {
+          errors.push({ row, column: 'Work', message: 'Vehicle has no current work — give the work' });
+          return [];
+        }
+        if (db.logs.some((l) => l.vehicleId === rec.vehicleId && l.date === rec.date)) {
+          errors.push({ row, column: 'Date', message: 'A logbook entry for this vehicle and date already exists' });
+          return [];
+        }
+        return [{ row, kind: 'insert' as const, coll: 'logs' as const, rec: { ...rec, siteId, driver: v?.driver || '', trips: 0, route: 'Fleet Edge', idleHours: rec.idleHours || 0, source: 'FLEET_EDGE' } }];
+      }),
   },
   {
     id: 'vehicles',

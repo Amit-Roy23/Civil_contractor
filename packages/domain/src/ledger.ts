@@ -82,11 +82,14 @@ export function productionUse(db: DB, p: Production): Array<{ materialId: ID; qt
   const plant = db.plants.find((x) => x.id === p.plantId);
   if (!rec) return [];
   if (plant?.type === 'CRUSHER') return [{ materialId: rec.productId, qty: p.qty, theoretical: p.qty }];
-  return rec.lines.map((l) => {
+  const lines = rec.lines.map((l) => {
     const theoretical = round(l.qty * p.qty, 3);
     const act = p.actual?.find((a) => a.materialId === l.materialId);
     return { materialId: l.materialId, qty: act ? act.qty : theoretical, theoretical };
   });
+  // HMP-01: burner LDO, DG diesel and anything else entered for the shift also leave the plant store
+  for (const a of p.actual || []) if (!rec.lines.some((l) => l.materialId === a.materialId) && a.qty > 0) lines.push({ materialId: a.materialId, qty: a.qty, theoretical: 0 });
+  return lines;
 }
 
 /** product output(s) of a production entry */

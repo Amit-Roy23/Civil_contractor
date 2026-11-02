@@ -217,6 +217,8 @@ export interface Store extends Base {
   plantId?: ID;
   address?: string;
   holds?: string;
+  /** Query 3 rule 2: tanks and stockpiles inside the store, with daily dips */
+  locations?: Array<{ name: string; materialId: ID; capacity: number; unit: string }>;
 }
 
 export type PlantType = 'HOT_MIX' | 'BATCHING' | 'CRUSHER' | 'WMM';
@@ -242,6 +244,11 @@ export interface Plant extends Base {
   equipment?: string;
   power?: string;
   burnerFuel?: string;
+  /* HMP-02 norms and the materials used as fuel */
+  burnerFuelId?: ID;
+  dgFuelId?: ID;
+  ldoPerMtNorm?: number;
+  dieselPerMtNorm?: number;
 }
 
 export type MaterialCategory =
@@ -350,6 +357,18 @@ export interface Worker extends Base {
   siteId: ID;
   upi: string;
   joiningDate: string;
+  /* LAB-01 / LAB-03 / LAB-04 */
+  fatherName?: string;
+  gender?: 'M' | 'F' | 'O';
+  dob?: string;
+  address?: string;
+  bankAccount?: string;
+  ifsc?: string;
+  uan?: string;
+  pfMember?: boolean;
+  esiMember?: boolean;
+  esicNo?: string;
+  leftOn?: string;
 }
 
 export type VehicleType =
@@ -514,6 +533,22 @@ export interface StockTxn extends Base {
   photos?: number;
   receivedAt?: string;
   approvalNote?: string;
+  /** PUR-01/02: tanker / truck receipt details */
+  receipt?: GoodsReceipt;
+}
+export interface GoodsReceipt {
+  /** quantity on the supplier's invoice / challan (to find the shortage) */
+  invoiceQty?: number;
+  weighGross?: number;
+  weighTare?: number;
+  temperature?: number;
+  /** tank stock by dip before and after unloading */
+  dipBefore?: number;
+  dipAfter?: number;
+  tankerNo?: string;
+  depot?: string;
+  royaltyPassNo?: string;
+  passPhotos?: number;
 }
 
 /* ---------------- Purchase (§5) ---------------- */
@@ -566,6 +601,9 @@ export interface PurchaseInvoice extends Base {
   storeId: ID;
   lines: POLine[];
   dueDate: string;
+  /** PUR-03: GST input credit eligible or blocked */
+  itc?: 'ELIGIBLE' | 'BLOCKED';
+  itcReason?: string;
 }
 
 export type PayMode = 'BANK' | 'CHEQUE' | 'UPI' | 'CASH';
@@ -757,12 +795,31 @@ export interface LogEntry extends Base {
   idleHours: number;
   idleReason?: 'Breakdown' | 'No work' | 'Rain' | 'No operator' | '';
   split?: Array<{ siteId: ID; share: number }>; // VEH-02
+  /** FLT-03: each trip, charged to its work */
+  tripRows?: TripRow[];
+  /** FLT-04: working for an outside party on hire (not charged to works) */
+  hiredOut?: boolean;
+  /** FLT-02: imported from Tata Fleet Edge */
+  source?: 'MANUAL' | 'FLEET_EDGE';
+  fuelLitres?: number;
+}
+export interface TripRow {
+  siteId: ID;
+  material: string;
+  from: string;
+  to: string;
+  qty: number;
+  unit: string;
+  chainage: string;
 }
 
 export interface JobCard extends Base {
   no: string;
   date: string;
-  vehicleId: ID;
+  /** a vehicle / machine, or plant equipment (HMP-07) */
+  vehicleId?: ID;
+  plantId?: ID;
+  equipment?: string;
   type: 'SERVICE' | 'BREAKDOWN' | 'REPAIR';
   complaint: string;
   workDone: string;
@@ -805,6 +862,12 @@ export interface Production extends Base {
   actual?: Array<{ materialId: ID; qty: number }>; // PLT-06 override
   rejectedQty: number;
   rejectReason?: string;
+  /* HMP-01 */
+  startTime?: string;
+  stopTime?: string;
+  mixTemp?: number;
+  dgHours?: number;
+  lotNo?: string;
 }
 
 export interface Dispatch extends Base {
@@ -825,6 +888,13 @@ export interface Dispatch extends Base {
   temperature?: number;
   weighbridgeSlip: string;
   status: 'DISPATCHED' | 'RECEIVED' | 'RETURNED';
+  /* HMP-03 challan: weighbridge, site confirmation */
+  tare?: number;
+  gross?: number;
+  buyerId?: ID;
+  arrivalTime?: string;
+  arrivalTemp?: number;
+  salesInvoiceId?: ID;
   receivedQty?: number;
   receivedAt?: string;
   returnReason?: string;
@@ -838,6 +908,9 @@ export interface PlantCost extends Base {
   machinery: number;
   maintenance: number;
   overhead: number;
+  /* HMP-05 */
+  depreciation?: number;
+  interest?: number;
 }
 
 export interface StockpileReading extends Base {
@@ -1050,6 +1123,8 @@ export interface Settings {
   tds?: { enabledFy: Record<string, boolean>; sections: TdsSection[] };
   /** ACC-03: Tally company and ledger names */
   tally?: { company: string; ledgers: Record<string, string> };
+  /** LAB-05: minimum wage per day by trade */
+  minWages?: Record<string, number>;
 }
 
 export interface AuditEntry {
@@ -1128,6 +1203,15 @@ export interface DB {
   guarantees: GuaranteeRec[];
   bankFacilities: BankFacility[];
   taxCredits: TaxCredit[];
+  tankDips: TankDip[];
+  salesInvoices: SalesInvoice[];
+  labTests: LabTest[];
+  safety: SafetyRec[];
+  siteRegisters: SiteRegister[];
+  dprs: Dpr[];
+  hireOuts: HireOut[];
+  loans: Loan[];
+  subsidyClaims: SubsidyClaim[];
   roles: Role[];
   users: User[];
   settings: Settings;
@@ -1139,3 +1223,155 @@ export interface DB {
 export type CollectionKey = {
   [K in keyof DB]: DB[K] extends Array<{ id: string }> ? K : never;
 }[keyof DB];
+
+/* ================= Phase 3 (Operations) ================= */
+
+/** Query 3 rule 2 / Phase 3 test 1: physical stock of a tank or stockpile */
+export interface TankDip extends Base {
+  date: string;
+  storeId: ID;
+  materialId: ID;
+  location: string;
+  /** reading as taken (cm / m), for the record */
+  reading?: number;
+  qty: number;
+  remarks: string;
+}
+
+/** HMP-04: hot mix sold to an outside buyer */
+export interface SalesInvoice extends Base {
+  no: string;
+  date: string;
+  firmId?: ID;
+  buyerId: ID;
+  plantId: ID;
+  dispatchIds: ID[];
+  lines: Array<{ productId: ID; description: string; hsn: string; qty: number; unit: string; rate: number; gstPct: number }>;
+  eway: { vehicleNo: string; distanceKm: number; transporter: string; transporterId: string; ewbNo: string; ewbDate: string };
+  receipts: Array<{ date: string; amount: number; utr: string }>;
+  status: 'ISSUED' | 'PARTLY_PAID' | 'PAID' | 'CANCELLED';
+  remarks: string;
+}
+
+/** HMP-06 / DPR-03: plant lot and site quality tests */
+export interface LabTest extends Base {
+  date: string;
+  kind: 'MARSHALL' | 'BITUMEN_CONTENT' | 'GRADATION' | 'DENSITY' | 'CUBE' | 'FDD' | 'SOIL' | 'OTHER';
+  plantId?: ID;
+  siteId?: ID;
+  productionId?: ID;
+  boqItemId?: ID;
+  lot: string;
+  sampleRef: string;
+  lab: string;
+  nabl: boolean;
+  reportNo: string;
+  results: Record<string, number>;
+  /** cube tests: cast date, grade and strengths at 7 / 28 days */
+  cube?: { castDate: string; grade: string; nos: number; d7?: number; d28?: number };
+  pass?: boolean;
+  remarks: string;
+  photos?: number;
+}
+
+/** LAB-07 */
+export interface SafetyRec extends Base {
+  kind: 'PPE' | 'TOOLBOX' | 'ACCIDENT';
+  date: string;
+  siteId: ID;
+  workerId?: ID;
+  item?: string;
+  qty?: number;
+  topic?: string;
+  attendees?: number;
+  person?: string;
+  injury?: string;
+  severity?: 'NEAR_MISS' | 'MINOR' | 'MAJOR' | 'FATAL';
+  action?: string;
+  reportedTo?: string;
+  remarks: string;
+}
+
+/** DPR-02: hindrance register and site order book */
+export interface SiteRegister extends Base {
+  kind: 'HINDRANCE' | 'SITE_ORDER';
+  siteId: ID;
+  no: string;
+  date: string;
+  ref: string;
+  by: string;
+  description: string;
+  fromDate?: string;
+  toDate?: string;
+  compliance: string;
+  closedOn?: string;
+}
+
+/** DPR-01 */
+export interface Dpr extends Base {
+  siteId: ID;
+  date: string;
+  weather: 'CLEAR' | 'CLOUDY' | 'RAIN' | 'HEAVY_RAIN';
+  manpower: number;
+  manpowerNote: string;
+  machines: string;
+  materials: string;
+  work: Array<{ boqItemId?: ID; description: string; qty: number; unit: string; chainage: string }>;
+  remarks: string;
+  hindrance: string;
+  photos?: number;
+}
+
+/** FLT-04: own machine hired out, with a hire bill */
+export interface HireOut extends Base {
+  no: string;
+  date: string;
+  vehicleId: ID;
+  party: string;
+  clientId?: ID;
+  from: string;
+  to: string;
+  basis: 'HOUR' | 'DAY' | 'MONTH' | 'TRIP' | 'KM';
+  units: number;
+  rate: number;
+  gstPct: number;
+  receipts: Array<{ date: string; amount: number; utr: string }>;
+  status: 'BILLED' | 'PARTLY_PAID' | 'PAID';
+  remarks: string;
+}
+
+/** HMP-08 / ACC-05: term and vehicle loans with their EMI schedule */
+export interface Loan extends Base {
+  lender: string;
+  kind: 'TERM' | 'VEHICLE' | 'OTHER';
+  purpose: string;
+  sanctionNo: string;
+  sanctionDate: string;
+  amount: number;
+  ratePct: number;
+  /** first EMI date */
+  startDate: string;
+  tenureMonths: number;
+  moratoriumMonths: number;
+  /** interest subsidy % of interest (e.g. under TIIPIS) */
+  subsidyPct: number;
+  vehicleId?: ID;
+  plantId?: ID;
+}
+
+/** HMP-08: TIIPIS claims — SGST paid in cash on outside sales, and loan interest subsidy */
+export interface SubsidyClaim extends Base {
+  kind: 'SGST' | 'INTEREST';
+  month: string;
+  /** SGST on outside sales that month (worked out) / interest paid (worked out) */
+  base: number;
+  /** SGST actually paid in cash as per GSTR-3B */
+  cashPaid: number;
+  claimAmount: number;
+  loanId?: ID;
+  claimRef: string;
+  filedOn?: string;
+  receivedOn?: string;
+  receivedAmount?: number;
+  remarks: string;
+}

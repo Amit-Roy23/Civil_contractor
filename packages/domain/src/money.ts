@@ -159,6 +159,19 @@ export function gstr1Rows(db: DB, from: string, to: string) {
         reverseCharge: 'N', type: 'Regular B2B', rate: b.gstPct, taxable: r2(t.gross), igst: sp.igst, cgst: sp.cgst, sgst: sp.sgst, sac: '9954',
       };
     })
+    .concat(
+      // HMP-04: hot mix sold to outside buyers
+      db.salesInvoices
+        .filter((i) => i.status !== 'CANCELLED' && i.date >= from && i.date <= to)
+        .map((i) => {
+          const firm = db.firms.find((f) => f.id === i.firmId) || db.firms[0];
+          const buyer = db.clients.find((c) => c.id === i.buyerId);
+          const taxable = r2(sum(i.lines, (l) => l.qty * l.rate));
+          const gst = r2(sum(i.lines, (l) => (l.qty * l.rate * l.gstPct) / 100));
+          const sp = gstSplit(firm?.gstin || '', buyer?.gstin || '', gst);
+          return { gstin: buyer?.gstin || '', receiver: buyer?.name || '', invoiceNo: i.no, date: i.date, value: Math.round(taxable + gst), placeOfSupply: (buyer?.gstin || firm?.gstin || '16').slice(0, 2), reverseCharge: 'N', type: buyer?.gstin ? 'Regular B2B' : 'B2C', rate: i.lines[0]?.gstPct ?? 18, taxable, igst: sp.igst, cgst: sp.cgst, sgst: sp.sgst, sac: i.lines.map((l) => l.hsn).join(', ') };
+        }),
+    )
     .sort((a, b) => a.invoiceNo.localeCompare(b.invoiceNo));
 }
 
@@ -177,6 +190,7 @@ export function tdsReturnRows(db: DB, from: string, to: string) {
 /* ---------------- ACC-03 Tally export ---------------- */
 export const TALLY_LEDGERS: Record<string, { name: string; group: string }> = {
   income: { name: 'Works Contract Receipts', group: 'Sales Accounts' },
+  hotmixSales: { name: 'Sale of Hot Mix', group: 'Sales Accounts' },
   cgstOut: { name: 'Output CGST', group: 'Duties & Taxes' },
   sgstOut: { name: 'Output SGST', group: 'Duties & Taxes' },
   igstOut: { name: 'Output IGST', group: 'Duties & Taxes' },
@@ -233,6 +247,23 @@ export function tallyVouchers(db: DB, from: string, to: string): TallyVoucher[] 
     }
     b.receipts.forEach((rc, i) => {
       if (inRange(rc.date)) out.push({ type: 'Receipt', date: rc.date, no: `${b.no}/R${i + 1}`, party: client, narration: `Received against ${b.no} · UTR ${rc.utr}`, lines: [{ ledger: L('bank'), amount: r2(rc.amount) }, { ledger: client, amount: -r2(rc.amount) }] });
+    });
+  }
+  // HMP-04 sales and their receipts
+  for (const inv of db.salesInvoices.filter((x) => x.status !== 'CANCELLED')) {
+    const buyer = db.clients.find((c) => c.id === inv.buyerId)?.name || 'Buyer';
+    const taxable = r2(sum(inv.lines, (l) => l.qty * l.rate));
+    const gst = r2(sum(inv.lines, (l) => (l.qty * l.rate * l.gstPct) / 100));
+    const firm = db.firms.find((f) => f.id === inv.firmId) || db.firms[0];
+    const sp = gstSplit(firm?.gstin || '', db.clients.find((c) => c.id === inv.buyerId)?.gstin || '', gst);
+    if (inRange(inv.date)) {
+      const lines = [{ ledger: buyer, amount: taxable + sp.cgst + sp.sgst + sp.igst }, { ledger: L('hotmixSales'), amount: -taxable }];
+      if (sp.cgst) lines.push({ ledger: L('cgstOut'), amount: -sp.cgst }, { ledger: L('sgstOut'), amount: -sp.sgst });
+      if (sp.igst) lines.push({ ledger: L('igstOut'), amount: -sp.igst });
+      out.push({ type: 'Sales', date: inv.date, no: inv.no, party: buyer, narration: `Hot mix ${sum(inv.lines, (l) => l.qty)} MT`, lines });
+    }
+    inv.receipts.forEach((rc, i) => {
+      if (inRange(rc.date)) out.push({ type: 'Receipt', date: rc.date, no: `${inv.no}/R${i + 1}`, party: buyer, narration: `Received against ${inv.no} · ${rc.utr}`, lines: [{ ledger: L('bank'), amount: r2(rc.amount) }, { ledger: buyer, amount: -r2(rc.amount) }] });
     });
   }
   const firmGstin = db.firms[0]?.gstin || '';

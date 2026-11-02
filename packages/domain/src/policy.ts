@@ -76,11 +76,12 @@ const MODULE: Record<CollectionKey, ModuleKey> = {
   fuelPurchases: 'fleet', fuelIssues: 'fleet', dips: 'fleet', logs: 'fleet', jobCards: 'fleet', tyres: 'fleet',
   production: 'plant', dispatches: 'plant', plantCosts: 'plant', stockpiles: 'plant',
   measurements: 'contract', raBills: 'contract', guarantees: 'contract', bankFacilities: 'contract', taxCredits: 'contract',
+  tankDips: 'inventory', salesInvoices: 'plant', labTests: 'contract', safety: 'labour', siteRegisters: 'contract', dprs: 'contract', hireOuts: 'fleet', loans: 'expenses', subsidyClaims: 'expenses',
   roles: 'admin', users: 'admin', audit: 'admin', notifications: 'dashboard',
 };
 
 /** entries that carry money only — need rate visibility (ROLE-03) */
-const MONEY: CollectionKey[] = ['pos', 'quotations', 'invoices', 'payments', 'debitNotes', 'overheads', 'plantCosts', 'raBills', 'workOrders', 'fuelPurchases', 'guarantees', 'bankFacilities', 'taxCredits'];
+const MONEY: CollectionKey[] = ['pos', 'quotations', 'invoices', 'payments', 'debitNotes', 'overheads', 'plantCosts', 'raBills', 'workOrders', 'fuelPurchases', 'guarantees', 'bankFacilities', 'taxCredits', 'salesInvoices', 'hireOuts', 'loans', 'subsidyClaims'];
 
 const STOCK_PREFIX: Record<string, string> = { OPENING: 'OPN', ISSUE: 'MIN', GRN: 'GRN', PLANT_RECEIPT: 'PRC', CONSUMPTION: 'CON', TRANSFER: 'TRF', RETURN: 'RTN', WASTAGE: 'WST', ADJUSTMENT: 'ADJ' };
 const SIMPLE_PREFIX: Partial<Record<CollectionKey, string>> = { requisitions: 'REQ', quotations: 'QTN', pos: 'PO', invoices: 'PINV', payments: 'PAY', debitNotes: 'DN', wageRuns: 'WAGE', workOrders: 'WO', subconBills: 'SCB', imprests: 'IMP', expenses: 'EXP', fuelPurchases: 'FPR', fuelIssues: 'FIS', jobCards: 'JC' };
@@ -159,6 +160,9 @@ function serverOwned(coll: CollectionKey, raw: Record<string, unknown>): Record<
   if (coll === 'wageRuns') out.lines = [];
   if (coll === 'raBills') Object.assign(out, { seq: 1, receipts: [], gstPct: 0, lines: [], deductions: { securityDeposit: 0, retention: 0, tds: 0, cess: 0, gstTds: 0, royalty: 0, advanceRecovery: 0, materialRecovery: 0, penalty: 0 } });
   if (coll === 'production') Object.assign(out, { productId: 'pending', runHours: 0 });
+  if (coll === 'salesInvoices') Object.assign(out, { lines: [], status: 'ISSUED' });
+  if (coll === 'hireOuts') out.status = 'BILLED';
+  if (coll === 'siteRegisters') out.no = 'NEW';
   return out;
 }
 
@@ -168,6 +172,7 @@ function parse(coll: CollectionKey, raw: unknown) {
   return r.data as any;
 }
 
+const salesTotal = (inv: any) => sum(inv.lines, (l: any) => l.qty * l.rate * (1 + l.gstPct / 100));
 const label = (coll: CollectionKey, r: any) => `${coll}: ${r.no || r.code || r.name || r.head || r.id}`;
 
 /* ================= INSERT ================= */
@@ -178,7 +183,8 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
   need(coll !== 'audit' && coll !== 'notifications', 'This record type is written by the system', 403);
   const isMaster = MASTER.includes(coll);
   if (coll === 'boq') need(s.can('contract', 'add') || s.can('masters', 'add'), 'Your role cannot add BOQ items', 403);
-  else requirePerm(s, MODULE[coll], 'add');
+  // plant staff record their own lab results (HMP-06); site QC is a contracts entry (DPR-03)
+  else requirePerm(s, coll === 'labTests' && raw.plantId ? 'plant' : MODULE[coll], 'add');
   if (MONEY.includes(coll)) need(s.showRates, 'Your role cannot see rates and amounts', 403);
 
   const r = parse(coll, { ...serverOwned(coll, raw), ...raw, id: raw.id || ctx.newId() });
@@ -388,11 +394,27 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
       need(s.seesSite(r.siteId), 'Site not in your access', 403);
       need(r.date <= ctx.today, 'Future dates are not allowed');
       need((r.closeKm ?? 0) >= (r.openKm ?? 0) && (r.closeHr ?? 0) >= (r.openHr ?? 0), 'Closing reading cannot be less than opening');
+      // FLT-03: each trip names its work; the day's machine cost is shared by trips
+      if (r.tripRows?.length) {
+        for (const tr of r.tripRows) need(s.seesSite(tr.siteId) && !!find(db, 'sites', tr.siteId), 'A trip is charged to a work not in your access', 403);
+        r.trips = r.tripRows.length;
+        const by: Record<string, number> = {};
+        for (const tr of r.tripRows) by[tr.siteId] = (by[tr.siteId] || 0) + 1;
+        r.split = Object.entries(by).map(([siteId, n]) => ({ siteId, share: round(n / r.tripRows.length, 4) }));
+        const fix = 1 - sum(r.split, (x: any) => x.share);
+        r.split[0].share = round(r.split[0].share + fix, 4);
+        r.materialQty = round(sum(r.tripRows, (x: any) => x.qty), 3);
+        r.material = r.material || r.tripRows[0].material;
+      }
+      if (r.hiredOut) r.split = undefined;
       if (r.split) need(Math.abs(sum(r.split, (x: any) => x.share) - 1) < 0.01, 'Site shares must add up to 100%');
       break;
     }
     case 'jobCards':
-      need(!!find(db, 'vehicles', r.vehicleId), 'Unknown vehicle');
+      // a vehicle / machine, or plant equipment (HMP-07)
+      if (r.plantId) need(s.allSites || s.plantIds.includes(r.plantId), 'Plant not in your access', 403);
+      else need(!!find(db, 'vehicles', r.vehicleId), 'Unknown vehicle');
+      if (r.plantId && !s.can('fleet', 'add')) need(s.can('plant', 'add'), 'Your role cannot record plant maintenance', 403);
       if (!s.showRates) {
         r.sparesCost = 0;
         r.labourCost = 0;
@@ -421,8 +443,18 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
     case 'dispatches': {
       const p = find(db, 'plants', r.plantId);
       need(p && (s.allSites || s.plantIds.includes(p.id)), 'Plant not in your access', 403);
+      // HMP-03: net weight from the weighbridge when gross and tare are given
+      if (r.gross > 0 && r.tare >= 0 && r.gross > r.tare) r.qty = round(r.gross - r.tare, 3);
       need(r.qty > 0, 'Quantity must be more than zero');
-      need(r.siteId || r.toPlantId || r.customer, 'Choose a receiving site, plant or customer');
+      if (r.buyerId) {
+        const buyer = find(db, 'clients', r.buyerId);
+        need(buyer, 'Unknown buyer');
+        r.customer = buyer.name;
+        r.siteId = undefined;
+        r.toPlantId = undefined;
+      }
+      need(r.siteId || r.toPlantId || r.customer, 'Every dispatch must name the work or the buyer');
+      r.salesInvoiceId = undefined;
       if (r.siteId) need(find(db, 'sites', r.siteId)?.status === 'ACTIVE', 'Receiving site is not active');
       need(!!find(db, 'vehicles', r.vehicleId), 'Unknown vehicle');
       backdated(ctx, r.date);
@@ -492,6 +524,59 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
       if (r.kind === 'FINAL') stageTo(ctx, out, site, 'FINAL_BILL_SUBMITTED');
       break;
     }
+    case 'tankDips': {
+      const st = find(db, 'stores', r.storeId);
+      need(st && s.seesStore(st.id), 'Store not in your access', 403);
+      need(!!find(db, 'materials', r.materialId), 'Unknown material');
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      need(!db.tankDips.some((x) => x.storeId === r.storeId && x.materialId === r.materialId && x.location === r.location && x.date === r.date), 'A dip for this tank and date is already entered — edit it instead', 409);
+      break;
+    }
+    case 'salesInvoices':
+      insertSalesInvoice(ctx, out, r, raw);
+      break;
+    case 'labTests':
+      need(r.plantId || r.siteId, 'Choose the plant or the work');
+      if (r.plantId) need(s.allSites || s.plantIds.includes(r.plantId), 'Plant not in your access', 403);
+      if (r.siteId) need(s.seesSite(r.siteId), 'Work not in your access', 403);
+      if (r.kind === 'CUBE') need(r.cube?.castDate, 'Cube tests need the casting date');
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      break;
+    case 'safety':
+      need(s.seesSite(r.siteId), 'Work not in your access', 403);
+      if (r.kind === 'ACCIDENT') need(r.person && r.injury && r.severity, 'Name, injury and severity are required for an accident');
+      if (r.kind === 'TOOLBOX') need(r.topic, 'Topic is required');
+      if (r.kind === 'PPE') need(r.item && r.qty > 0, 'Item and quantity are required');
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      break;
+    case 'siteRegisters': {
+      need(s.seesSite(r.siteId), 'Work not in your access', 403);
+      need(String(r.description).trim(), 'Description is required');
+      if (r.kind === 'HINDRANCE') need(r.fromDate, 'Hindrance start date is required');
+      if (r.fromDate && r.toDate) need(r.toDate >= r.fromDate, 'Hindrance end is before its start');
+      const n = db.siteRegisters.filter((x) => x.siteId === r.siteId && x.kind === r.kind).length + 1;
+      r.no = `${r.kind === 'HINDRANCE' ? 'HR' : 'SO'}-${String(n).padStart(2, '0')}`;
+      break;
+    }
+    case 'dprs':
+      need(s.seesSite(r.siteId), 'Work not in your access', 403);
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      need(!db.dprs.some((x) => x.siteId === r.siteId && x.date === r.date), 'The DPR for this work and date already exists — open it to edit', 409);
+      break;
+    case 'hireOuts':
+      need(!!find(db, 'vehicles', r.vehicleId), 'Unknown machine');
+      need(r.from <= r.to && r.to <= ctx.today, 'Hire period is not valid');
+      need(r.units > 0 && r.rate > 0, 'Units and rate are required');
+      r.receipts = [];
+      r.status = 'BILLED';
+      r.no = allocate(ctx, out, 'HIRE', r.date);
+      break;
+    case 'loans':
+      need(r.amount > 0 && r.tenureMonths > 0, 'Amount and tenure are required');
+      break;
+    case 'subsidyClaims':
+      if (r.loanId) need(!!find(db, 'loans', r.loanId), 'Unknown loan');
+      break;
     case 'guarantees':
       need(r.amount > 0, 'Amount must be more than zero');
       if (r.siteId) need(s.seesSite(r.siteId), 'Work not in your access', 403);
@@ -563,6 +648,50 @@ function importRows(ctx: Ctx, templateId: string, ops: ImportOp[]): Result {
   }
   audit.push({ action: 'CREATE', entity: 'Import', entityId: templateId, label: `Excel import: ${ops.length} ${t!.title.toLowerCase()} rows` });
   return { db, changes, audit, record: { imported: ops.length } };
+}
+
+/** HMP-04: invoice outside sales from received dispatches of one buyer */
+function insertSalesInvoice(ctx: Ctx, out: Result, r: any, raw: Record<string, unknown>) {
+  const s = ctx.session;
+  const db = ctx.db;
+  const plant = find(db, 'plants', r.plantId);
+  need(plant && (s.allSites || s.plantIds.includes(plant.id)), 'Plant not in your access', 403);
+  const buyer = find(db, 'clients', r.buyerId);
+  need(buyer, 'Unknown buyer');
+  need(r.dispatchIds.length > 0, 'Choose the loads to invoice');
+  need(r.date <= ctx.today, 'Future dates are not allowed');
+  const ds = r.dispatchIds.map((id: ID) => find(db, 'dispatches', id));
+  for (const d of ds) {
+    need(d && d.plantId === r.plantId, 'A load is not from this plant');
+    need(!d.siteId && !d.toPlantId && (d.buyerId === r.buyerId || (!d.buyerId && d.customer === buyer.name)), `${d?.no || 'A load'} is not a sale to ${buyer.name}`);
+    need(d.status === 'RECEIVED', `${d.no} is not delivered yet`);
+    need(!d.salesInvoiceId, `${d.no} is already invoiced`, 409);
+  }
+  // one line per product; rate per unit entered for the invoice, else the dispatch sale rate
+  const rates = (raw.rates || {}) as Record<string, number>;
+  const byProduct = new Map<string, number>();
+  for (const d of ds) byProduct.set(d.productId, (byProduct.get(d.productId) || 0) + (d.receivedQty ?? d.qty));
+  r.lines = [...byProduct.entries()].map(([pid, q]) => {
+    const m = find(db, 'materials', pid);
+    const rate = Number(rates[pid]) || ds.find((d: any) => d.productId === pid && d.saleRate)?.saleRate || 0;
+    need(rate > 0, `Enter the rate for ${m?.name || 'the product'}`);
+    return { productId: pid, description: m?.name || pid, hsn: m?.hsn || '2715', qty: round(q, 3), unit: m?.unit || 'MT', rate: round(rate, 2), gstPct: m?.gstPct ?? 18 };
+  });
+  r.firmId = plant.firmId || db.firms[0]?.id;
+  const firm = find(db, 'firms', r.firmId);
+  const prefix = firm?.invoicePrefix || (firm ? `${firm.code}/INV` : 'INV');
+  const key = invoiceKey(prefix, r.date);
+  const n = (out.db.seq[key] || 0) + 1;
+  out.db = { ...out.db, seq: { ...out.db.seq, [key]: n } };
+  out.changes.push({ single: 'seq', value: out.db.seq });
+  r.no = invoiceNo(prefix, r.date, n);
+  r.status = 'ISSUED';
+  r.receipts = [];
+  for (const d of ds) {
+    const upd = { ...d, salesInvoiceId: r.id };
+    out.db = put(out.db, 'dispatches', upd);
+    out.changes.push({ coll: 'dispatches', id: upd.id, rec: upd });
+  }
 }
 
 /** BIL-08: a submitted bill gets the next tax invoice number of its firm's series */
@@ -828,13 +957,82 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
         break;
       }
       case 'dispatches': {
-        only(['status', 'receivedQty', 'receivedAt']);
+        only(['status', 'receivedQty', 'receivedAt', 'arrivalTime', 'arrivalTemp', 'boqItemId', 'chainage']);
         need(before.status === 'DISPATCHED' && patch.status === 'RECEIVED', 'Only a dispatched load can be received');
+        if (patch.boqItemId) need(find(db, 'boq', String(patch.boqItemId))?.siteId === before.siteId, 'BOQ item is not of this work');
         need(s.seesSite(before.siteId) || (s.allSites || s.plantIds.includes(before.toPlantId)), 'Only the receiving site can confirm', 403);
         need(s.can('inventory', 'add') || s.can('plant', 'add'), 'Your role cannot confirm receipts', 403);
         const q = Number(patch.receivedQty ?? before.qty);
         need(q >= 0 && q <= before.qty * 1.05, 'Received quantity is not valid');
-        after = { ...before, status: 'RECEIVED', receivedQty: round(q, 3), receivedAt: ctx.now };
+        after = {
+          ...before, status: 'RECEIVED', receivedQty: round(q, 3), receivedAt: ctx.now,
+          arrivalTime: patch.arrivalTime ? String(patch.arrivalTime).slice(0, 5) : before.arrivalTime,
+          arrivalTemp: patch.arrivalTemp !== undefined && patch.arrivalTemp !== '' ? Number(patch.arrivalTemp) : before.arrivalTemp,
+          boqItemId: (patch.boqItemId as string) || before.boqItemId, chainage: patch.chainage !== undefined ? String(patch.chainage).slice(0, 200) : before.chainage,
+        };
+        break;
+      }
+      case 'salesInvoices': {
+        requirePerm(s, 'plant', 'edit');
+        need(s.showRates, 'Your role cannot see sales', 403);
+        if (patch.status === 'CANCELLED') {
+          only(['status']);
+          need(s.isAdmin, 'Only Admin can cancel an invoice', 403);
+          need(reason && reason.trim(), 'Reason is required to cancel');
+          need(!before.receipts.length, 'Payment is recorded against this invoice');
+          after = { ...before, status: 'CANCELLED' };
+          for (const did of before.dispatchIds) {
+            const d = find(out.db, 'dispatches', did);
+            if (d) {
+              const upd = { ...d, salesInvoiceId: undefined };
+              out.db = put(out.db, 'dispatches', upd);
+              out.changes.push({ coll: 'dispatches', id: upd.id, rec: upd });
+            }
+          }
+          action = 'CANCEL';
+        } else {
+          only(['receipts', 'eway', 'remarks']);
+          need(before.status !== 'CANCELLED', 'Invoice is cancelled');
+          const p2 = schemas.salesInvoices.parse({ ...before, ...patch });
+          need(p2.receipts.length >= before.receipts.length, 'Earlier receipts cannot be changed');
+          const total = salesTotal(p2);
+          const got = sum(p2.receipts, (x: any) => x.amount);
+          after = { ...before, ...p2, createdAt: before.createdAt, createdBy: before.createdBy, status: p2.receipts.length ? (got >= total - 1 ? 'PAID' : 'PARTLY_PAID') : 'ISSUED' };
+        }
+        break;
+      }
+      case 'hireOuts': {
+        requirePerm(s, 'fleet', 'edit');
+        need(s.showRates, 'Your role cannot see hire bills', 403);
+        only(['receipts', 'remarks']);
+        const p2 = schemas.hireOuts.parse({ ...before, ...patch });
+        need(p2.receipts.length >= before.receipts.length, 'Earlier receipts cannot be changed');
+        const total = before.units * before.rate * (1 + before.gstPct / 100);
+        const got = sum(p2.receipts, (x: any) => x.amount);
+        after = { ...before, receipts: p2.receipts, remarks: p2.remarks, status: p2.receipts.length ? (got >= total - 1 ? 'PAID' : 'PARTLY_PAID') : 'BILLED' };
+        break;
+      }
+      case 'invoices':
+        // PUR-03: GST input credit eligible / blocked
+        only(['itc', 'itcReason']);
+        requirePerm(s, 'purchase', 'edit');
+        after = { ...before, itc: patch.itc === 'BLOCKED' ? 'BLOCKED' : 'ELIGIBLE', itcReason: String(patch.itcReason || '').slice(0, 200) || undefined };
+        break;
+      case 'tankDips':
+      case 'labTests':
+      case 'safety':
+      case 'siteRegisters':
+      case 'dprs':
+      case 'loans':
+      case 'subsidyClaims': {
+        const mod = coll === 'labTests' && before.plantId ? 'plant' : MODULE[coll];
+        need(s.can(mod, 'edit') || (coll === 'dprs' && before.createdBy === s.user.id && before.date === ctx.today), 'Your role cannot edit this', 403);
+        if (coll === 'loans' || coll === 'subsidyClaims') need(s.showRates, 'Your role cannot see loans', 403);
+        after = parse(coll, { ...before, ...patch });
+        after.createdAt = before.createdAt;
+        after.createdBy = before.createdBy;
+        need(['siteId', 'storeId', 'plantId', 'date', 'kind', 'no'].every((k) => !(k in patch) || patch[k] === before[k] || coll === 'loans' || coll === 'subsidyClaims'), 'Work, store, date and type cannot be changed — enter a new record');
+        if (coll === 'siteRegisters' && after.fromDate && after.toDate) need(after.toDate >= after.fromDate, 'Hindrance end is before its start');
         break;
       }
       case 'pos':

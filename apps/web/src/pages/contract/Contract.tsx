@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { DprTab, ProgrammeTab, QualityTab, SiteRegistersTab } from './SiteProgress';
 import { IndianRupee, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { useDB, update } from '../../data/store';
 import { useSession } from '../../data/session';
@@ -31,6 +32,10 @@ export default function Contract() {
       {tab === 'tax' && <TaxTab />}
       {tab === 'budget' && <BudgetTab />}
       {tab === 'boq-cost' && <BoqCostTab />}
+      {tab === 'dpr' && <DprTab />}
+      {tab === 'registers' && <SiteRegistersTab />}
+      {tab === 'quality' && <QualityTab />}
+      {tab === 'programme' && <ProgrammeTab />}
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { vehicleName } from './works.js';
 import { billTotals, deductionDiff, mQty } from './billing.js';
 import { guaranteeAlerts } from './money.js';
+import { cubesDue, dipRows, productionRatios } from './ops.js';
+import { STATUTORY, licences, minWageBreaches } from './labourreg.js';
 import type { CostHead, DB, Dispatch, FuelIssue, ID, LogEntry, PurchaseInvoice, RaBill, StockTxn, SubconBill, Vehicle } from './types.js';
 import { bkey, getLedger, isEffective, productionUse, type Movement } from './ledger.js';
 import { addDays, daysBetween, monthOf, today } from './format.js';
@@ -447,7 +449,11 @@ export function wageFor(db: DB, workerId: ID, from: string, to: string) {
   const ot = sum(rows, (a) => a.otHours);
   const gross = days * w.wageRate + ot * w.otRate;
   const advance = sum(db.advances.filter((a) => a.workerId === workerId && a.date >= from && a.date <= to), (a) => a.amount);
-  const deduction = Math.round(gross * 0.0075);
+  // statutory deductions as in the wage register: EPF 12% of wages up to ₹15,000, ESIC 0.75% for members
+  const basic = days * w.wageRate;
+  const pf = w.pfMember ? Math.round((Math.min(basic, STATUTORY.pfCeiling) * STATUTORY.pfRate) / 100) : 0;
+  const esi = w.esiMember ? Math.ceil((gross * STATUTORY.esiEe) / 100) : 0;
+  const deduction = pf + esi;
   return { workerId, days, otHours: ot, gross: Math.round(gross), advance, deduction, net: Math.round(gross - advance - deduction) };
 }
 
@@ -618,7 +624,8 @@ export function vehicleEfficiencySummary(db: DB, r?: Range) {
 }
 
 /** site shares for a vehicle-day (VEH-02) */
-export const logShares = (l: LogEntry) => l.split?.length ? l.split : [{ siteId: l.siteId, share: 1 }];
+/** works a day's machine use is charged to; a machine hired out to another party is charged to none (FLT-04) */
+export const logShares = (l: LogEntry): Array<{ siteId: ID; share: number }> => (l.hiredOut ? [] : l.split?.length ? l.split : [{ siteId: l.siteId, share: 1 }]);
 export const logUsage = (l: LogEntry) => (l.closeKm ?? 0) - (l.openKm ?? 0) || (l.closeHr ?? 0) - (l.openHr ?? 0);
 
 /** Fuel cost charged to sites (FUEL-09) — each fill is spread over the sites the machine worked at until the next fill */
@@ -714,7 +721,7 @@ export function maintenanceCostByVehicle(db: DB) {
   return memo(db, 'mnt', () => {
     const L = getLedger(db);
     const out: Array<{ date: string; vehicleId: ID; amount: number; kind: string }> = [];
-    for (const j of db.jobCards) out.push({ date: j.date, vehicleId: j.vehicleId, amount: j.sparesCost + j.labourCost, kind: 'Job card' });
+    for (const j of db.jobCards.filter((x) => x.vehicleId)) out.push({ date: j.date, vehicleId: j.vehicleId!, amount: j.sparesCost + j.labourCost, kind: 'Job card' });
     for (const mv of L.movements) if (mv.kind === 'Spares to vehicle' && mv.vehicleId) out.push({ date: mv.date, vehicleId: mv.vehicleId, amount: -mv.value, kind: 'Store spares' });
     for (const t of db.tyres) out.push({ date: t.fitDate, vehicleId: t.vehicleId, amount: t.cost, kind: t.kind === 'TYRE' ? 'Tyre' : 'Battery' });
     return out;
@@ -1002,7 +1009,7 @@ export function pendingApprovals(db: DB): ApprovalItem[] {
 
 export interface Alert {
   id: string;
-  code: 'ALT-01' | 'ALT-02' | 'ALT-03' | 'ALT-04' | 'ALT-05' | 'ALT-06' | 'ALT-07' | 'ALT-08';
+  code: 'ALT-01' | 'ALT-02' | 'ALT-03' | 'ALT-04' | 'ALT-05' | 'ALT-06' | 'ALT-07' | 'ALT-08' | 'ALT-09';
   severity: 'critical' | 'serious' | 'warning';
   title: string;
   detail: string;
@@ -1090,6 +1097,16 @@ export function alerts(db: DB): Alert[] {
         title: due!.days < 0 ? `${what} expired ${-due!.days} days ago` : `${what} expires in ${due!.days} days`,
         detail: `${g.bank} · ₹${Math.round(g.amount).toLocaleString('en-IN')}${g.siteId ? ` · ${lk.site[g.siteId]?.short}` : ''} · valid to ${g.expiryDate}`, siteId: g.siteId, link: '/contract/guarantees',
       });
+    }
+    // ALT-09: quality, labour compliance, tank dips and plant ratios (Phase 3)
+    const T = today();
+    for (const c of cubesDue(db, T)) out.push({ id: `a9c-${c.testId}-${c.age}`, code: 'ALT-09', severity: c.overdue > 2 ? 'serious' : 'warning', title: `${c.age}-day cube test due — ${c.grade}${c.siteId ? ` · ${lk.site[c.siteId]?.short}` : ''}`, detail: c.overdue ? `${c.overdue} days overdue (due ${c.due})` : `due ${c.due}`, siteId: c.siteId, link: '/contract/quality' });
+    for (const b of minWageBreaches(db)) out.push({ id: `a9w-${b.worker.id}`, code: 'ALT-09', severity: 'serious', title: `${b.worker.name} paid below minimum wage`, detail: `₹${b.worker.wageRate}/day against ₹${b.min} for ${b.worker.trade}`, siteId: b.worker.siteId, link: '/masters/workers' });
+    for (const l of licences(db, T).filter((x) => x.days <= 30)) out.push({ id: `a9l-${l.id}`, code: 'ALT-09', severity: l.days < 0 ? 'critical' : 'serious', title: `Labour licence ${l.days < 0 ? 'expired' : 'expiring'} — ${l.who}`, detail: `${l.no} · valid to ${l.validTo}`, link: '/labour/compliance' });
+    for (const d of dipRows(db, { from: addDays(T, -3) }).filter((x) => !x.ok)) out.push({ id: `a9d-${d.dip.id}`, code: 'ALT-09', severity: 'serious', title: `${lk.material[d.dip.materialId]?.name} dip differs from book — ${lk.store[d.dip.storeId]?.name}`, detail: `dip ${d.dip.qty} vs book ${d.book} (${d.pct > 0 ? '+' : ''}${d.pct}%, tolerance ±${d.tolerance}%) on ${d.dip.date}`, link: '/plant/tanks' });
+    for (const p of db.production.filter((x) => x.date >= addDays(T, -3))) {
+      const r = productionRatios(db, p);
+      if (r.flags.length) out.push({ id: `a9p-${p.id}`, code: 'ALT-09', severity: 'warning', title: `${p.no}: ${r.flags[0]}`, detail: r.flags.slice(1).join(' · ') || `${p.qty} MT on ${p.date}`, link: '/plant/production' });
     }
     const order = { critical: 0, serious: 1, warning: 2 };
     return out.sort((a, b) => order[a.severity] - order[b.severity]);

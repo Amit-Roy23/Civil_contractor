@@ -34,6 +34,7 @@ export default function Purchase() {
       {tab === 'suppliers' && <SupplierLedgerTab />}
       {tab === 'payables' && <PayablesTab />}
       {tab === 'register' && <RegisterTab />}
+      {tab === 'rates' && <RatesTab />}
     </div>
   );
 }
@@ -618,6 +619,13 @@ function GrnForm({ onClose, po: presetPo }: { onClose: () => void; po?: Purchase
   const [veh, setVeh] = useState('');
   const [wb, setWb] = useState('');
   const [photos, setPhotos] = useState(0);
+  // Query 3 / PUR-05: tanker, weighbridge, temperature, dips and royalty pass for bulk receipts
+  const [rc, setRc] = useState<Record<string, string | number | ''>>({});
+  const bulk = rows.some((r) => ['Bitumen', 'Fuel & Lubricants', 'Aggregates', 'Sand'].includes(lk.material[r.materialId]?.category || ''));
+  const accepted = sum(rows, (r) => Number(r.received || 0) - Number(r.rejected || 0));
+  const shortage = rc.invoiceQty !== undefined && rc.invoiceQty !== '' ? round(Number(rc.invoiceQty) - accepted, 3) : null;
+  const weighNet = rc.weighGross && rc.weighTare !== undefined && rc.weighTare !== '' ? round(Number(rc.weighGross) - Number(rc.weighTare), 3) : null;
+  const dipGain = rc.dipBefore !== undefined && rc.dipBefore !== '' && rc.dipAfter !== undefined && rc.dipAfter !== '' ? round(Number(rc.dipAfter) - Number(rc.dipBefore), 3) : null;
   const pickPo = (id: string) => {
     setPoId(id);
     const p = poStatus(db, id);
@@ -636,7 +644,8 @@ function GrnForm({ onClose, po: presetPo }: { onClose: () => void; po?: Purchase
     if (!lines.length) return toast.error('Enter received quantity');
     if (lines.some((l) => l.rejectedQty && !l.rejectReason)) return toast.error('Give a reason for rejected quantity');
     const no = nextNo('GRN', d);
-    insert('stockTxns', { no, type: 'GRN', date: d, toStoreId: po.deliveryStoreId, supplierId: po.supplierId, poId: po.id, challanNo: challan, vehicleNo: veh, weighbridgeSlip: wb, lines, photos, receivedBy: s.user.name, status: rule.needsApproval ? 'PENDING' : 'POSTED' } as any, `GRN ${no}`, 'GRN');
+    const receipt = Object.fromEntries(Object.entries(rc).filter(([, v]) => v !== '' && v !== undefined).map(([k, v]) => [k, ['tankerNo', 'depot', 'royaltyPassNo'].includes(k) ? String(v) : Number(v)]));
+    insert('stockTxns', { no, type: 'GRN', date: d, toStoreId: po.deliveryStoreId, supplierId: po.supplierId, poId: po.id, challanNo: challan, vehicleNo: veh, weighbridgeSlip: wb, lines, photos, receivedBy: s.user.name, receipt: Object.keys(receipt).length ? receipt : undefined, status: rule.needsApproval ? 'PENDING' : 'POSTED' } as any, `GRN ${no}`, 'GRN');
     const remaining = st!.lines.reduce((x, l) => x + l.pending, 0) - rows.reduce((x, r) => x + Number(r.received || 0), 0);
     update('pos', po.id, { status: remaining > 0.01 ? 'PARTIAL' : 'CLOSED' }, `${po.no} ${remaining > 0.01 ? 'partly' : 'fully'} received`, 'Purchase order');
     const rejected = lines.filter((l) => l.rejectedQty);
@@ -665,6 +674,22 @@ function GrnForm({ onClose, po: presetPo }: { onClose: () => void; po?: Purchase
           </Field>
           <AttachField count={photos} onChange={setPhotos} label="Photos / challan scan" />
         </div>
+        {bulk && (
+          <Section title="Bulk receipt — tanker, weighbridge, dips, royalty">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Field label="Qty on supplier invoice" hint={shortage !== null ? (shortage > 0 ? <span className="text-bad">Short {qty(shortage)}</span> : 'No shortage') : undefined}><NumberInput value={rc.invoiceQty as any} onChange={(v) => setRc({ ...rc, invoiceQty: v })} /></Field>
+              <Field label="Weighbridge gross"><NumberInput value={rc.weighGross as any} onChange={(v) => setRc({ ...rc, weighGross: v })} /></Field>
+              <Field label="Tare" hint={weighNet !== null ? `Net ${qty(weighNet)}` : undefined}><NumberInput value={rc.weighTare as any} onChange={(v) => setRc({ ...rc, weighTare: v })} /></Field>
+              <Field label="Temperature"><NumberInput value={rc.temperature as any} onChange={(v) => setRc({ ...rc, temperature: v })} suffix="°C" /></Field>
+              <Field label="Tank dip before"><NumberInput value={rc.dipBefore as any} onChange={(v) => setRc({ ...rc, dipBefore: v })} /></Field>
+              <Field label="Tank dip after" hint={dipGain !== null ? `Into tank ${qty(dipGain)}` : undefined}><NumberInput value={rc.dipAfter as any} onChange={(v) => setRc({ ...rc, dipAfter: v })} /></Field>
+              <Field label="Tanker no."><Input value={String(rc.tankerNo ?? '')} onChange={(e) => setRc({ ...rc, tankerNo: e.target.value.toUpperCase() })} /></Field>
+              <Field label="Depot / refinery"><Input value={String(rc.depot ?? '')} onChange={(e) => setRc({ ...rc, depot: e.target.value })} /></Field>
+              <Field label="Royalty / transit pass no." className="col-span-2"><Input value={String(rc.royaltyPassNo ?? '')} onChange={(e) => setRc({ ...rc, royaltyPassNo: e.target.value })} /></Field>
+            </div>
+            {dipGain !== null && Math.abs(dipGain - accepted) > 0.001 && <Callout tone="warn" className="mt-2">Dip shows {qty(dipGain)} into the tank against {qty(accepted)} accepted.</Callout>}
+          </Section>
+        )}
         <DateRuleNote date={d} />
         {po && (
           <Section title={`Receive against ${po.no} → ${lk.store[po.deliveryStoreId]?.name}`}>
@@ -733,6 +758,7 @@ function InvoicesTab() {
           { key: 'po', header: 'PO / GRN', value: (r) => (r.poId ? n.lk.po[r.poId]?.no : ''), cell: (r) => <span className="text-xs font-mono">{r.poId ? n.lk.po[r.poId]?.no : '—'} · {r.grnIds.length} GRN</span>, hideMobile: true },
           { key: 'value', header: 'Amount', align: 'right', rate: true, value: (r) => Math.round(poValue(r.lines)), cell: (r) => inr(poValue(r.lines)) },
           { key: 'due', header: 'Due', value: (r) => r.dueDate, cell: (r) => <span className={r.dueDate < today() ? 'text-bad' : ''}>{date(r.dueDate)}</span> },
+          { key: 'itc', header: 'GST credit', value: (r) => r.itc || 'ELIGIBLE', cell: (r) => (s.can('purchase', 'edit') ? <button title={r.itcReason || 'Click to change'} onClick={() => { const blocked = r.itc !== 'BLOCKED'; const why = blocked ? window.prompt('Why is the GST credit blocked? (e.g. Sec 17(5), supplier not filed)') : ''; if (blocked && !why) return; update('invoices', r.id, { itc: blocked ? 'BLOCKED' : 'ELIGIBLE', itcReason: why || '' }, `${r.no} GST credit ${blocked ? 'blocked' : 'eligible'}`, 'Invoice'); }}><Badge tone={r.itc === 'BLOCKED' ? 'bad' : 'good'}>{r.itc === 'BLOCKED' ? 'Blocked' : 'Eligible'}</Badge></button> : <Badge tone={r.itc === 'BLOCKED' ? 'bad' : 'good'}>{r.itc === 'BLOCKED' ? 'Blocked' : 'Eligible'}</Badge>), hideMobile: true },
           { key: 'match', header: '3-way match', value: (r) => (threeWayMatch(db, r).ok ? 'Matched' : 'Mismatch'), cell: (r) => { const m = threeWayMatch(db, r); return m.ok ? <Badge tone="good">Matched</Badge> : <span title={m.issues.join('\n')}><Badge tone="bad">{m.issues.length} difference{m.issues.length > 1 ? 's' : ''}</Badge></span>; } },
         ]}
       />
@@ -1086,6 +1112,56 @@ function RegisterTab() {
         { key: 'total', header: 'Total', align: 'right' as const, rate: true, value: (r: any) => Math.round(r.total), cell: (r: any) => <b>{inr(r.total)}</b> },
       ]}
       totals={{ taxable: inr(sum(grouped, (r) => r.taxable)), total: inr(sum(grouped, (r) => r.total)), __export: { taxable: Math.round(sum(grouped, (r) => r.taxable)), total: Math.round(sum(grouped, (r) => r.total)) } }}
+    />
+  );
+}
+
+/* ================= PUR-06: rate comparison by material and supplier ================= */
+function RatesTab() {
+  const db = useDB();
+  const s = useSession();
+  const n = useNames();
+  const [matId, setMatId] = useState('');
+  const rows = useMemo(() => {
+    const out: Array<{ key: string; materialId: string; supplierId: string; count: number; qty: number; last: number; lastDate: string; min: number; avg: number }> = [];
+    const by = new Map<string, Array<{ date: string; qty: number; rate: number }>>();
+    for (const inv of db.invoices) for (const l of inv.lines) {
+      if (matId && l.materialId !== matId) continue;
+      const k = `${l.materialId}|${inv.supplierId}`;
+      by.set(k, [...(by.get(k) || []), { date: inv.date, qty: l.qty, rate: l.rate }]);
+    }
+    for (const q of db.quotations) for (const l of q.quotes) {
+      if (matId && q.materialId !== matId) continue;
+      const k = `${q.materialId}|${l.supplierId}`;
+      if (!by.has(k)) by.set(k, [{ date: q.date, qty: 0, rate: l.rate }]);
+    }
+    for (const [k, l] of by) {
+      const [materialId, supplierId] = k.split('|') as [string, string];
+      const sorted = l.slice().sort((a, b) => a.date.localeCompare(b.date));
+      const q = sum(l, (x) => x.qty);
+      out.push({ key: k, materialId, supplierId, count: l.length, qty: q, last: sorted.at(-1)!.rate, lastDate: sorted.at(-1)!.date, min: Math.min(...l.map((x) => x.rate)), avg: q ? round(sum(l, (x) => x.qty * x.rate) / q, 2) : sorted.at(-1)!.rate });
+    }
+    return out.sort((a, b) => n.mat(a.materialId).localeCompare(n.mat(b.materialId)) || a.last - b.last);
+  }, [db, matId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const best = new Map<string, number>();
+  for (const r of rows) best.set(r.materialId, Math.min(best.get(r.materialId) ?? Infinity, r.last));
+  if (!s.showRates) return <Callout>Your role cannot see rates.</Callout>;
+  return (
+    <DataTable
+      title="Rate comparison"
+      subtitle="Rates paid on purchase invoices (and quoted) by material and supplier — the lowest latest rate is marked"
+      rows={rows}
+      rowKey={(r) => r.key}
+      toolbar={<Combo value={matId} onChange={setMatId} placeholder="All materials" options={[{ value: '', label: 'All materials' }, ...db.materials.filter((m) => m.kind !== 'OUTPUT').map((m) => ({ value: m.id, label: m.name }))]} className="w-56" />}
+      columns={[
+        { key: 'm', header: 'Material', primary: true, value: (r) => n.mat(r.materialId) },
+        { key: 's', header: 'Supplier', value: (r) => n.sup(r.supplierId) },
+        { key: 'last', header: 'Latest rate', align: 'right', value: (r) => r.last, cell: (r) => <span className={r.last === best.get(r.materialId) ? 'text-good font-semibold' : ''}>{inr(r.last)}{r.last === best.get(r.materialId) && <Badge tone="good" className="ml-1">lowest</Badge>}</span> },
+        { key: 'ld', header: 'On', value: (r) => r.lastDate, cell: (r) => date(r.lastDate), hideMobile: true },
+        { key: 'min', header: 'Lowest paid', align: 'right', value: (r) => r.min, cell: (r) => inr(r.min), hideMobile: true },
+        { key: 'avg', header: 'Weighted avg', align: 'right', value: (r) => r.avg, cell: (r) => inr(r.avg) },
+        { key: 'q', header: 'Qty bought', align: 'right', value: (r) => r.qty, cell: (r) => qty(r.qty, n.unit(r.materialId)) },
+      ]}
     />
   );
 }
