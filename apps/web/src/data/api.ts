@@ -43,14 +43,15 @@ async function call<T>(path: string, body?: unknown, method = body === undefined
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new ApiError('Cannot reach the server — check the internet connection', 0);
+    throw new ApiError(navigator.onLine ? `Cannot reach the server at ${BASE.replace(/\/v2$/, '')} — ${BASE.startsWith('/') ? 'check the internet connection' : 'this address is not this site; remove VITE_API_URL from the hosting settings and redeploy'}` : 'No internet connection', 0);
   }
   const text = await res.text();
   let data: any = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    /* non-JSON error page */
+    // an HTML page where JSON was expected: the server part is not deployed at this address
+    if (/^\s*</.test(text)) throw new ApiError('The server is not running at /api on this site — the hosting is serving only the web pages. See docs/VERCEL_MONGODB.md, step 2.', res.status || 502);
   }
   if (!res.ok) {
     const m = data?.message;

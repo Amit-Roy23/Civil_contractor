@@ -14,7 +14,10 @@ const local = process.argv.includes('--local');
 
 // 1. the web app, always talking to the real server (no demo data)
 process.env.VITE_DATA_MODE = 'api';
-process.env.VITE_API_URL = process.env.VITE_API_URL || '/api';
+// the API is deployed with the app, on the same address: an old VITE_API_URL left in the hosting
+// settings (e.g. from a separate API server) must not send the app somewhere else
+if (process.env.VITE_API_URL && process.env.VITE_API_URL !== '/api') console.warn(`! Ignoring VITE_API_URL=${process.env.VITE_API_URL} — this build serves its own API at /api`);
+process.env.VITE_API_URL = process.env.WCM_EXTERNAL_API_URL || '/api';
 const { build: vite } = await import('vite');
 await vite({ root: web, mode: 'production', logLevel: 'warn' });
 console.log('✓ web app built (server mode)');
@@ -44,7 +47,8 @@ if (local) {
   process.exit(0);
 }
 
-const out = join(web, '.vercel', 'output');
+// Vercel reads .vercel/output from the folder the build runs in (the project's Root Directory)
+const out = join(process.cwd(), '.vercel', 'output');
 await rm(out, { recursive: true, force: true });
 await mkdir(join(out, 'static'), { recursive: true });
 await cp(join(web, 'dist'), join(out, 'static'), { recursive: true });
