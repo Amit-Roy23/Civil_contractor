@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildCompanyDB } from '../src/setup.js';
 import { applyCommand, type Command } from '../src/policy.js';
@@ -156,7 +156,14 @@ describe('guarantees, bank limits and money blocked (SEC-01…04)', () => {
     let g = run(db, { kind: 'insert', coll: 'guarantees', rec: { kind: 'PS', instrument: 'BG', number: 'BG/77', bank: 'SBI Dharmanagar', amount: 500000, issueDate: '2026-05-01', expiryDate: '2026-11-25', claimDate: '2027-02-25', siteId: site.id, marginPct: 10 } });
     db = run(g.db, { kind: 'insert', coll: 'guarantees', rec: { kind: 'EMD', instrument: 'FDR', number: 'FDR/9', bank: 'SBI Dharmanagar', amount: 200000, issueDate: '2026-03-01', expiryDate: '2027-03-01', siteId: site.id } }).db;
     expect(guaranteeAlerts(db, TODAY).map((x) => x.due!.stage)).toEqual([30]);
-    expect(alerts(db).some((a) => a.code === 'ALT-08' && a.title.includes('expires in 24 days'))).toBe(true);
+    // alerts read the real clock: pin it to the test date
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(`${TODAY}T10:00:00`));
+    try {
+      expect(alerts(db).some((a) => a.code === 'ALT-08' && a.title.includes('expires in 24 days'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
     const blocked = moneyBlocked(db).find((x) => x.siteId === site.id)!;
     expect([blocked.ps, blocked.emd]).toEqual([50000, 200000]);
     const bank = bankUsage(db)[0]!;

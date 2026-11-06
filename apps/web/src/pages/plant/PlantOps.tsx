@@ -293,7 +293,7 @@ function SalesInvoiceForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SalesInvoiceView({ inv, onClose }: { inv: SalesInvoice; onClose: () => void }) {
+export function SalesInvoiceView({ inv, onClose }: { inv: SalesInvoice; onClose: () => void }) {
   const db = useDB();
   const s = useSession();
   const n = useNames();
@@ -307,8 +307,8 @@ function SalesInvoiceView({ inv, onClose }: { inv: SalesInvoice; onClose: () => 
     printDocument({
       title: 'TAX INVOICE',
       firmId: inv.firmId,
-      meta: [['Invoice no.', inv.no], ['Date', date(inv.date)], ['Buyer', buyer?.name || ''], ['Buyer GSTIN', buyer?.gstin || 'Unregistered'], ['Address', buyer?.address || ''], ['Place of supply', buyer?.gstin ? `State ${buyer.gstin.slice(0, 2)}` : 'Tripura (16)'], ['Vehicle', inv.eway.vehicleNo], ['E-way bill', inv.eway.ewbNo || '—'], ['Loads', inv.dispatchIds.map((id) => db.dispatches.find((d) => d.id === id)?.no).join(', ')]],
-      table: { title: 'Lines', headers: ['Description', 'HSN', 'Qty', 'Unit', 'Rate', 'Taxable value', 'GST %'], numeric: [2, 4, 5, 6], rows: inv.lines.map((l) => [l.description, l.hsn, l.qty, l.unit, l.rate.toFixed(2), (l.qty * l.rate).toFixed(2), l.gstPct]) },
+      meta: [['Invoice no.', inv.no], ['Date', date(inv.date)], ['Buyer', buyer?.name || ''], ['Buyer GSTIN', buyer?.gstin || 'Unregistered'], ['Address', buyer?.address || ''], ['Place of supply', buyer?.gstin ? `State ${buyer.gstin.slice(0, 2)}` : 'Tripura (16)'], ['Vehicle', inv.eway.vehicleNo], ['E-way bill', inv.eway.ewbNo || '—'], inv.kind === 'GOODS' ? ['Dispatched from', n.store(inv.storeId)] : ['Loads', inv.dispatchIds.map((id) => db.dispatches.find((d) => d.id === id)?.no).join(', ')], ['Amount in words', rupeesInWords(t.total)]],
+      table: { title: 'Lines', headers: ['Description', 'HSN', 'Qty', 'Unit', 'Rate', 'Taxable value', 'GST %', 'GST'], numeric: [2, 4, 5, 6, 7], rows: inv.lines.map((l) => [l.description, l.hsn, l.qty, l.unit, l.rate.toFixed(2), (l.qty * l.rate).toFixed(2), l.gstPct, ((l.qty * l.rate * l.gstPct) / 100).toFixed(2)]) },
       summary: [['Taxable value', inr(t.taxable)], ...(t.igst ? [['IGST', inr(t.igst)] as [string, string]] : [['CGST', inr(t.cgst)] as [string, string], ['SGST', inr(t.sgst)] as [string, string]]), ['Invoice total (rounded)', inr(t.total)]],
       footerNote: 'Certified that the particulars given above are true and correct.',
     });
@@ -330,7 +330,7 @@ function SalesInvoiceView({ inv, onClose }: { inv: SalesInvoice; onClose: () => 
       <div className="space-y-4">
         <KV items={[['Taxable', inr(t.taxable)], [t.igst ? 'IGST' : 'CGST + SGST', t.igst ? inr(t.igst) : `${inr(t.cgst)} + ${inr(t.sgst)}`], ['Total', <b key="t">{inr(t.total)}</b>], ['Received', inr(t.received)], ['Outstanding', inr(t.outstanding)], ['Status', <StatusBadge key="s" status={inv.status} />]]} />
         {inv.lines.map((l) => <div key={l.productId} className="text-sm">{l.description} · HSN {l.hsn} · {qty(l.qty, l.unit)} × {inr(l.rate)} · GST {l.gstPct}%</div>)}
-        {inv.status !== 'CANCELLED' && s.can('plant', 'edit') && (
+        {inv.status !== 'CANCELLED' && s.can(inv.kind === 'GOODS' ? 'purchase' : 'plant', 'edit') && (
           <>
             <Section title="E-way bill no.">
               <div className="flex gap-2"><Input value={ewb} onChange={(e) => setEwb(e.target.value)} /><Button onClick={() => (update('salesInvoices', inv.id, { eway: { ...inv.eway, ewbNo: ewb, ewbDate: today() } }, `E-way ${inv.no}`, 'Sales invoice'), toast.success('Saved'))}>Save</Button></div>
@@ -661,3 +661,25 @@ function ClaimForm({ kind, onClose }: { kind: SubsidyClaim['kind']; onClose: () 
   );
 }
 
+
+/** Indian numbering in words, for the tax invoice (e.g. 1,86,558 → One Lakh Eighty Six Thousand Five Hundred Fifty Eight) */
+export function rupeesInWords(amount: number): string {
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const two = (x: number) => (x < 20 ? ones[x]! : `${tens[Math.floor(x / 10)]}${x % 10 ? ` ${ones[x % 10]}` : ''}`);
+  const three = (x: number) => `${x >= 100 ? `${ones[Math.floor(x / 100)]} Hundred${x % 100 ? ' ' : ''}` : ''}${x % 100 ? two(x % 100) : ''}`;
+  let n = Math.round(Math.abs(amount));
+  if (!n) return 'Rupees Zero Only';
+  const parts: string[] = [];
+  const crore = Math.floor(n / 1e7);
+  n %= 1e7;
+  const lakh = Math.floor(n / 1e5);
+  n %= 1e5;
+  const thousand = Math.floor(n / 1000);
+  n %= 1000;
+  if (crore) parts.push(`${crore >= 100 ? three(crore) : two(crore)} Crore`);
+  if (lakh) parts.push(`${two(lakh)} Lakh`);
+  if (thousand) parts.push(`${two(thousand)} Thousand`);
+  if (n) parts.push(three(n));
+  return `Rupees ${parts.join(' ')} Only`;
+}

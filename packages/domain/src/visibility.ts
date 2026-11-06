@@ -72,7 +72,7 @@ export function recordInScope(db: DB, s: Session, coll: CollectionKey, r: any): 
     case 'tankDips':
       return store(r.storeId);
     case 'salesInvoices':
-      return s.showRates && plant(r.plantId);
+      return s.showRates && (r.kind === 'GOODS' ? store(r.storeId) : plant(r.plantId));
     case 'labTests':
       return r.plantId ? plant(r.plantId) : site(r.siteId);
     case 'safety':

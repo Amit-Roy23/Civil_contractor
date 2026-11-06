@@ -77,6 +77,7 @@ function StockTab() {
     { key: 'received', header: 'Received', align: 'right', value: (r) => round(r.received, 2), cell: (r) => <span className="text-good">{r.received ? `+${qty(r.received)}` : '—'}</span> },
     { key: 'consumed', header: 'Consumed', align: 'right', value: (r) => round(r.consumed, 2), cell: (r) => (r.consumed ? qty(r.consumed) : '—') },
     { key: 'transferred', header: 'Issued / transferred', align: 'right', value: (r) => round(r.transferred, 2), cell: (r) => (r.transferred ? qty(r.transferred) : '—'), hideMobile: true },
+    { key: 'sold', header: 'Sold', align: 'right', value: (r) => round(r.sold, 2), cell: (r) => (r.sold ? qty(r.sold) : '—'), hideMobile: true },
     { key: 'returned', header: 'Returned', align: 'right', value: (r) => round(r.returned, 2), cell: (r) => (r.returned ? qty(r.returned) : '—'), hideMobile: true },
     { key: 'wasted', header: 'Wasted', align: 'right', value: (r) => round(r.wasted, 2), cell: (r) => (r.wasted ? <span className="text-bad">{qty(r.wasted)}</span> : '—'), hideMobile: true },
     { key: 'adjusted', header: 'Adjusted', align: 'right', value: (r) => round(r.adjusted, 2), cell: (r) => (r.adjusted ? qty(r.adjusted) : '—'), hideMobile: true },

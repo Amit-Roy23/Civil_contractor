@@ -184,10 +184,11 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
   const isMaster = MASTER.includes(coll);
   if (coll === 'boq') need(s.can('contract', 'add') || s.can('masters', 'add'), 'Your role cannot add BOQ items', 403);
   // plant staff record their own lab results (HMP-06); site QC is a contracts entry (DPR-03)
-  else requirePerm(s, coll === 'labTests' && raw.plantId ? 'plant' : MODULE[coll], 'add');
+  else requirePerm(s, coll === 'labTests' && raw.plantId ? 'plant' : coll === 'salesInvoices' && raw.kind === 'GOODS' ? 'purchase' : MODULE[coll], 'add');
   if (MONEY.includes(coll)) need(s.showRates, 'Your role cannot see rates and amounts', 403);
 
-  const r = parse(coll, { ...serverOwned(coll, raw), ...raw, id: raw.id || ctx.newId() });
+  // sales invoice lines are always built by the server (from the loads or the goods entered)
+  const r = parse(coll, { ...serverOwned(coll, raw), ...raw, ...(coll === 'salesInvoices' ? { lines: [] } : {}), id: raw.id || ctx.newId() });
   need(!find(db, coll, r.id), 'Duplicate record id', 409);
   r.createdAt = ctx.now;
   r.createdBy = s.user.id;
@@ -652,6 +653,8 @@ function importRows(ctx: Ctx, templateId: string, ops: ImportOp[]): Result {
 
 /** HMP-04: invoice outside sales from received dispatches of one buyer */
 function insertSalesInvoice(ctx: Ctx, out: Result, r: any, raw: Record<string, unknown>) {
+  if (r.kind === 'GOODS') return insertGoodsSale(ctx, out, r, raw);
+  r.kind = 'PLANT';
   const s = ctx.session;
   const db = ctx.db;
   const plant = find(db, 'plants', r.plantId);
@@ -678,7 +681,17 @@ function insertSalesInvoice(ctx: Ctx, out: Result, r: any, raw: Record<string, u
     return { productId: pid, description: m?.name || pid, hsn: m?.hsn || '2715', qty: round(q, 3), unit: m?.unit || 'MT', rate: round(rate, 2), gstPct: m?.gstPct ?? 18 };
   });
   r.firmId = plant.firmId || db.firms[0]?.id;
-  const firm = find(db, 'firms', r.firmId);
+  issueSalesNo(out, r);
+  for (const d of ds) {
+    const upd = { ...d, salesInvoiceId: r.id };
+    out.db = put(out.db, 'dispatches', upd);
+    out.changes.push({ coll: 'dispatches', id: upd.id, rec: upd });
+  }
+}
+
+/** one GST invoice series per firm, shared by RA bills, hot mix and goods sales */
+function issueSalesNo(out: Result, r: any) {
+  const firm = find(out.db, 'firms', r.firmId);
   const prefix = firm?.invoicePrefix || (firm ? `${firm.code}/INV` : 'INV');
   const key = invoiceKey(prefix, r.date);
   const n = (out.db.seq[key] || 0) + 1;
@@ -687,11 +700,40 @@ function insertSalesInvoice(ctx: Ctx, out: Result, r: any, raw: Record<string, u
   r.no = invoiceNo(prefix, r.date, n);
   r.status = 'ISSUED';
   r.receipts = [];
-  for (const d of ds) {
-    const upd = { ...d, salesInvoiceId: r.id };
-    out.db = put(out.db, 'dispatches', upd);
-    out.changes.push({ coll: 'dispatches', id: upd.id, rec: upd });
-  }
+}
+
+/** sale of goods from a store: stock must be there on the date and on every later day */
+function insertGoodsSale(ctx: Ctx, out: Result, r: any, raw: Record<string, unknown>) {
+  const s = ctx.session;
+  const db = ctx.db;
+  const store = find(db, 'stores', r.storeId);
+  need(store && s.seesStore(store.id), 'Store not in your access', 403);
+  const buyer = find(db, 'clients', r.buyerId);
+  need(buyer, 'Unknown buyer');
+  need(r.date <= ctx.today, 'Future dates are not allowed');
+  const rawLines = Array.isArray(raw.lines) ? (raw.lines as any[]) : [];
+  need(rawLines.length > 0 && rawLines.length <= 20, 'Add the goods sold (1 to 20 lines)');
+  r.lines = rawLines.map((l, i) => {
+    const m = find(db, 'materials', String(l?.materialId ?? l?.productId ?? ''));
+    need(m, `Line ${i + 1}: unknown material`);
+    const qty = round(Number(l.qty), 3);
+    const rate = round(Number(l.rate), 2);
+    need(qty > 0, `Line ${i + 1}: quantity must be more than zero`);
+    need(rate > 0, `Line ${i + 1}: enter the sale rate for ${m.name}`);
+    const gstPct = l.gstPct === undefined || l.gstPct === '' ? m.gstPct ?? 18 : Number(l.gstPct);
+    need([0, 0.1, 0.25, 1, 1.5, 3, 5, 6, 12, 18, 28, 40].includes(gstPct), `Line ${i + 1}: GST rate ${gstPct}% is not a GST slab`);
+    const hsn = String(l.hsn || m.hsn || '').trim();
+    need(/^\d{4,8}$/.test(hsn), `Line ${i + 1}: HSN code (4 to 8 digits) is required for ${m.name} — set it on the material`);
+    return { productId: m.id, description: String(l.description || m.name).slice(0, 200), hsn, qty, unit: m.unit, rate, gstPct };
+  });
+  checkStock(ctx, db, store.id, r.lines.map((l: any) => ({ materialId: l.productId, qty: l.qty })), r.date);
+  const site = store.siteId ? find(db, 'sites', store.siteId) : undefined;
+  const plant = store.plantId ? find(db, 'plants', store.plantId) : undefined;
+  if (raw.firmId) need(!!find(db, 'firms', String(raw.firmId)), 'Unknown firm');
+  r.firmId = (raw.firmId as string) || site?.firmId || plant?.firmId || db.firms[0]?.id;
+  r.plantId = undefined;
+  r.dispatchIds = [];
+  issueSalesNo(out, r);
 }
 
 /** BIL-08: a submitted bill gets the next tax invoice number of its firm's series */
@@ -973,7 +1015,7 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
         break;
       }
       case 'salesInvoices': {
-        requirePerm(s, 'plant', 'edit');
+        requirePerm(s, before.kind === 'GOODS' ? 'purchase' : 'plant', 'edit');
         need(s.showRates, 'Your role cannot see sales', 403);
         if (patch.status === 'CANCELLED') {
           only(['status']);
@@ -997,6 +1039,7 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
           need(p2.receipts.length >= before.receipts.length, 'Earlier receipts cannot be changed');
           const total = salesTotal(p2);
           const got = sum(p2.receipts, (x: any) => x.amount);
+          need(got <= Math.round(total) + 1, `Receipts (${round(got, 2)}) are more than the invoice total (${Math.round(total)})`);
           after = { ...before, ...p2, createdAt: before.createdAt, createdBy: before.createdBy, status: p2.receipts.length ? (got >= total - 1 ? 'PAID' : 'PARTLY_PAID') : 'ISSUED' };
         }
         break;

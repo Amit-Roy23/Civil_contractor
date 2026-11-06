@@ -54,6 +54,8 @@ export interface RegisterRow {
   received: number;
   consumed: number;
   transferred: number;
+  /** sold to outside parties (sale of goods) */
+  sold: number;
   returned: number;
   wasted: number;
   adjusted: number;
@@ -71,7 +73,7 @@ export function stockRegister(db: DB, storeId: ID, r: Range): RegisterRow[] {
     const rows = new Map<string, RegisterRow>();
     const row = (m: string) => {
       let x = rows.get(m);
-      if (!x) rows.set(m, (x = { materialId: m, opening: 0, received: 0, consumed: 0, transferred: 0, returned: 0, wasted: 0, adjusted: 0, closing: 0, openingValue: 0, closingValue: 0, consumedValue: 0, receivedValue: 0 }));
+      if (!x) rows.set(m, (x = { materialId: m, opening: 0, received: 0, consumed: 0, transferred: 0, sold: 0, returned: 0, wasted: 0, adjusted: 0, closing: 0, openingValue: 0, closingValue: 0, consumedValue: 0, receivedValue: 0 }));
       return x;
     };
     for (const mv of L.movements) {
@@ -95,6 +97,7 @@ export function stockRegister(db: DB, storeId: ID, r: Range): RegisterRow[] {
         x.consumed -= mv.qty;
         x.consumedValue -= mv.value;
       } else if (mv.kind === 'Transfer out' || mv.kind === 'Issue' || mv.kind === 'Dispatch' || mv.kind === 'Spares to vehicle') x.transferred -= mv.qty;
+      else if (mv.kind === 'Sale') x.sold -= mv.qty;
       else if (mv.kind === 'Return out') x.returned -= mv.qty;
       else if (mv.kind === 'Wastage') x.wasted -= mv.qty;
       else if (mv.kind === 'Adjustment') x.adjusted += mv.qty;
@@ -113,7 +116,7 @@ export function stockRegister(db: DB, storeId: ID, r: Range): RegisterRow[] {
       x.closing = round(c.q, 3);
       x.closingValue = Math.abs(c.q) < 1e-6 ? 0 : c.v;
     }
-    return [...rows.values()].filter((x) => Math.abs(x.opening) + x.received + x.consumed + x.transferred + Math.abs(x.closing) > 1e-6);
+    return [...rows.values()].filter((x) => Math.abs(x.opening) + x.received + x.consumed + x.transferred + x.sold + Math.abs(x.closing) > 1e-6);
   });
 }
 
@@ -854,7 +857,7 @@ export function plantReconciliation(db: DB, plantId: ID, month: string) {
       const sp = db.stockpiles.filter((s) => s.plantId === plantId && s.materialId === r.materialId && s.date <= to).sort((a, b) => b.date.localeCompare(a.date))[0];
       const physical = sp && monthOf(sp.date) === month ? sp.physicalQty : r.closing;
       const book = r.opening + r.received - t;
-      const loss = book - physical - r.transferred - r.wasted + r.adjusted;
+      const loss = book - physical - r.transferred - r.sold - r.wasted + r.adjusted;
       return { materialId: r.materialId, opening: r.opening, received: r.received, theoretical: t, actualUsed: r.consumed, closingBook: r.closing, physical, physicalFromStockpile: !!(sp && monthOf(sp.date) === month), loss, lossPct: r.opening + r.received ? (loss / (r.opening + r.received)) * 100 : 0 };
     });
 }

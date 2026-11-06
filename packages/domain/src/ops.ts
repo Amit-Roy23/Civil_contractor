@@ -101,8 +101,9 @@ export function ewayRow(db: DB, inv: SalesInvoice) {
   const firm = db.firms.find((f) => f.id === inv.firmId) || db.firms[0];
   const buyer = db.clients.find((c) => c.id === inv.buyerId);
   const plant = db.plants.find((p) => p.id === inv.plantId);
+  const store = db.stores.find((s) => s.id === inv.storeId);
   return {
-    docNo: inv.no, docDate: inv.date, supplierGstin: firm?.gstin || '', dispatchFrom: plant?.location || '', recipientGstin: buyer?.gstin || 'URP', recipient: buyer?.name || '', shipTo: buyer?.address || '',
+    docNo: inv.no, docDate: inv.date, supplierGstin: firm?.gstin || '', dispatchFrom: plant?.location || store?.address || store?.name || '', recipientGstin: buyer?.gstin || 'URP', recipient: buyer?.name || '', shipTo: buyer?.address || '',
     hsn: inv.lines.map((l) => l.hsn).join(', '), product: inv.lines.map((l) => l.description).join(', '), qty: sum(inv.lines, (l) => l.qty), unit: inv.lines[0]?.unit || 'MT',
     taxable: t.taxable, cgst: t.cgst, sgst: t.sgst, igst: t.igst, total: t.total, vehicleNo: inv.eway.vehicleNo, distanceKm: inv.eway.distanceKm, transporter: inv.eway.transporter, transporterId: inv.eway.transporterId,
   };

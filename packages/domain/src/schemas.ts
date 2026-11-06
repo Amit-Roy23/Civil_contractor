@@ -215,7 +215,7 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
   plantCosts: z.object({ ...base, plantId: id, month, labour: nn, power: nn, machinery: nn, maintenance: nn, overhead: nn, depreciation: nn.optional(), interest: nn.optional() }),
   tankDips: z.object({ ...base, date, storeId: id, materialId: id, location: s(80).default(''), reading: nn.optional(), qty: nn, remarks: s(300).default('') }),
   salesInvoices: z.object({
-    ...base, no: s(60), date, firmId: optId, buyerId: id, plantId: id, dispatchIds: z.array(id).max(300),
+    ...base, no: s(60), date, kind: z.enum(['PLANT', 'GOODS']).optional(), firmId: optId, buyerId: id, plantId: optId, storeId: optId, dispatchIds: z.array(id).max(300).default([]),
     lines: z.array(z.object({ productId: id, description: s(200), hsn: s(12), qty: nn, unit: s(10), rate: nn, gstPct: pct })).max(20),
     eway: z.object({ vehicleNo: s(20).default(''), distanceKm: nn.default(0), transporter: s(120).default(''), transporterId: s(20).default(''), ewbNo: s(20).default(''), ewbDate: optDate }).default({}),
     receipts: z.array(z.object({ date, amount: nn, utr: s(60) })).max(100).default([]), status: z.enum(['ISSUED', 'PARTLY_PAID', 'PAID', 'CANCELLED']), remarks: s(500).default(''),

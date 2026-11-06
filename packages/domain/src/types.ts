@@ -1238,13 +1238,20 @@ export interface TankDip extends Base {
   remarks: string;
 }
 
-/** HMP-04: hot mix sold to an outside buyer */
+/**
+ * HMP-04: hot mix sold to an outside buyer (kind PLANT, made from delivered loads), and
+ * sale of goods from any store — aggregates, bitumen, cement, steel, scrap (kind GOODS):
+ * the goods leave the store at average cost when the invoice is issued.
+ */
 export interface SalesInvoice extends Base {
   no: string;
   date: string;
+  kind?: 'PLANT' | 'GOODS';
   firmId?: ID;
   buyerId: ID;
-  plantId: ID;
+  plantId?: ID;
+  /** GOODS: the store the goods leave from */
+  storeId?: ID;
   dispatchIds: ID[];
   lines: Array<{ productId: ID; description: string; hsn: string; qty: number; unit: string; rate: number; gstPct: number }>;
   eway: { vehicleNo: string; distanceKm: number; transporter: string; transporterId: string; ewbNo: string; ewbDate: string };

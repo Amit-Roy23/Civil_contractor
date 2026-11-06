@@ -160,16 +160,20 @@ export function gstr1Rows(db: DB, from: string, to: string) {
       };
     })
     .concat(
-      // HMP-04: hot mix sold to outside buyers
+      // HMP-04 hot mix and sale of goods: GSTR-1 wants one row per invoice and GST rate
       db.salesInvoices
         .filter((i) => i.status !== 'CANCELLED' && i.date >= from && i.date <= to)
-        .map((i) => {
+        .flatMap((i) => {
           const firm = db.firms.find((f) => f.id === i.firmId) || db.firms[0];
           const buyer = db.clients.find((c) => c.id === i.buyerId);
-          const taxable = r2(sum(i.lines, (l) => l.qty * l.rate));
-          const gst = r2(sum(i.lines, (l) => (l.qty * l.rate * l.gstPct) / 100));
-          const sp = gstSplit(firm?.gstin || '', buyer?.gstin || '', gst);
-          return { gstin: buyer?.gstin || '', receiver: buyer?.name || '', invoiceNo: i.no, date: i.date, value: Math.round(taxable + gst), placeOfSupply: (buyer?.gstin || firm?.gstin || '16').slice(0, 2), reverseCharge: 'N', type: buyer?.gstin ? 'Regular B2B' : 'B2C', rate: i.lines[0]?.gstPct ?? 18, taxable, igst: sp.igst, cgst: sp.cgst, sgst: sp.sgst, sac: i.lines.map((l) => l.hsn).join(', ') };
+          const invValue = Math.round(sum(i.lines, (l) => l.qty * l.rate * (1 + l.gstPct / 100)));
+          const rates = [...new Set(i.lines.map((l) => l.gstPct))].sort((a, b) => a - b);
+          return rates.map((rate) => {
+            const ls = i.lines.filter((l) => l.gstPct === rate);
+            const taxable = r2(sum(ls, (l) => l.qty * l.rate));
+            const sp = gstSplit(firm?.gstin || '', buyer?.gstin || '', r2((taxable * rate) / 100));
+            return { gstin: buyer?.gstin || '', receiver: buyer?.name || '', invoiceNo: i.no, date: i.date, value: invValue, placeOfSupply: (buyer?.gstin || firm?.gstin || '16').slice(0, 2), reverseCharge: 'N', type: buyer?.gstin ? 'Regular B2B' : 'B2C', rate, taxable, igst: sp.igst, cgst: sp.cgst, sgst: sp.sgst, sac: [...new Set(ls.map((l) => l.hsn))].join(', ') };
+          });
         }),
     )
     .sort((a, b) => a.invoiceNo.localeCompare(b.invoiceNo));
@@ -191,6 +195,7 @@ export function tdsReturnRows(db: DB, from: string, to: string) {
 export const TALLY_LEDGERS: Record<string, { name: string; group: string }> = {
   income: { name: 'Works Contract Receipts', group: 'Sales Accounts' },
   hotmixSales: { name: 'Sale of Hot Mix', group: 'Sales Accounts' },
+  goodsSales: { name: 'Sale of Goods', group: 'Sales Accounts' },
   cgstOut: { name: 'Output CGST', group: 'Duties & Taxes' },
   sgstOut: { name: 'Output SGST', group: 'Duties & Taxes' },
   igstOut: { name: 'Output IGST', group: 'Duties & Taxes' },
@@ -257,10 +262,10 @@ export function tallyVouchers(db: DB, from: string, to: string): TallyVoucher[] 
     const firm = db.firms.find((f) => f.id === inv.firmId) || db.firms[0];
     const sp = gstSplit(firm?.gstin || '', db.clients.find((c) => c.id === inv.buyerId)?.gstin || '', gst);
     if (inRange(inv.date)) {
-      const lines = [{ ledger: buyer, amount: taxable + sp.cgst + sp.sgst + sp.igst }, { ledger: L('hotmixSales'), amount: -taxable }];
+      const lines = [{ ledger: buyer, amount: r2(taxable + sp.cgst + sp.sgst + sp.igst) }, { ledger: L(inv.kind === 'GOODS' ? 'goodsSales' : 'hotmixSales'), amount: -taxable }];
       if (sp.cgst) lines.push({ ledger: L('cgstOut'), amount: -sp.cgst }, { ledger: L('sgstOut'), amount: -sp.sgst });
       if (sp.igst) lines.push({ ledger: L('igstOut'), amount: -sp.igst });
-      out.push({ type: 'Sales', date: inv.date, no: inv.no, party: buyer, narration: `Hot mix ${sum(inv.lines, (l) => l.qty)} MT`, lines });
+      out.push({ type: 'Sales', date: inv.date, no: inv.no, party: buyer, narration: inv.lines.map((l) => `${l.description} ${l.qty} ${l.unit}`).join(', '), lines });
     }
     inv.receipts.forEach((rc, i) => {
       if (inRange(rc.date)) out.push({ type: 'Receipt', date: rc.date, no: `${inv.no}/R${i + 1}`, party: buyer, narration: `Received against ${inv.no} · ${rc.utr}`, lines: [{ ledger: L('bank'), amount: r2(rc.amount) }, { ledger: buyer, amount: -r2(rc.amount) }] });

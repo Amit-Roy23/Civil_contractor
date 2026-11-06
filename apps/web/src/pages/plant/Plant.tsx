@@ -490,7 +490,7 @@ function RawTab() {
           { key: 'opening', header: 'Opening', align: 'right', value: (r) => round(r.opening, 2), cell: (r) => qty(r.opening) },
           { key: 'received', header: 'Received', align: 'right', value: (r) => round(r.received, 2), cell: (r) => <span className="text-good">{r.received ? `+${qty(r.received)}` : '—'}</span> },
           { key: 'consumed', header: 'Used in production', align: 'right', value: (r) => round(r.consumed, 2), cell: (r) => (r.consumed ? qty(r.consumed) : '—') },
-          { key: 'out', header: 'Dispatched / out', align: 'right', value: (r) => round(r.transferred, 2), cell: (r) => (r.transferred ? qty(r.transferred) : '—') },
+          { key: 'out', header: 'Dispatched / out', align: 'right', value: (r) => round(r.transferred + r.sold, 2), cell: (r) => (r.transferred + r.sold ? qty(r.transferred + r.sold) : '—') },
           { key: 'wasted', header: 'Wastage', align: 'right', value: (r) => round(r.wasted, 2), cell: (r) => (r.wasted ? qty(r.wasted) : '—'), hideMobile: true },
           { key: 'closing', header: 'Closing', align: 'right', value: (r) => round(r.closing, 2), cell: (r) => <b>{qty(r.closing, n.unit(r.materialId))}</b> },
           { key: 'value', header: 'Value', align: 'right', rate: true, value: (r) => Math.round(r.closingValue), cell: (r) => inr(r.closingValue) },

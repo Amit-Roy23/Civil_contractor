@@ -1,6 +1,7 @@
 import { tdsFor } from '@civil/domain/billing';
 import { vehicleLabel } from '@civil/domain/works';
 import { useMemo, useState } from 'react';
+import { GoodsSalesTab, PartyItemsTab } from './GoodsSales';
 import { CircleCheck, FileText, PackageCheck, Plus, Printer, Send, ShoppingCart, Trophy, Truck, Wallet } from 'lucide-react';
 import { useDB, insert, update, nextNo } from '../../data/store';
 import { useSession } from '../../data/session';
@@ -35,6 +36,8 @@ export default function Purchase() {
       {tab === 'payables' && <PayablesTab />}
       {tab === 'register' && <RegisterTab />}
       {tab === 'rates' && <RatesTab />}
+      {tab === 'sales' && <GoodsSalesTab />}
+      {tab === 'party-items' && <PartyItemsTab />}
     </div>
   );
 }
