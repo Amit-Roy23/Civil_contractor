@@ -219,9 +219,19 @@ function printHtml(title: string, body: string, lh: Letterhead = letterheadOf())
 <div class="hd"><div style="display:flex;gap:12px;align-items:center">${imgOk(lh.logo) ? `<img src="${lh.logo}" style="height:46px;max-width:120px;object-fit:contain">` : ''}<div><div class="co">${esc(lh.name)}</div><div class="sub">${esc(lh.line)}</div>${lh.contact ? `<div class="sub">${esc(lh.contact)}</div>` : ''}</div></div>
 <div class="sub">Printed ${new Date().toLocaleString('en-IN')}</div></div>
 ${body}
-<script>window.onload=()=>{setTimeout(()=>window.print(),150)}</script>
 </body></html>`);
   w.document.close();
+  // printed from here, not by a script inside the page, so the site's security policy can forbid inline scripts
+  const go = () => {
+    try {
+      w.focus();
+      w.print();
+    } catch {
+      /* window closed */
+    }
+  };
+  if (w.document.readyState === 'complete') setTimeout(go, 250);
+  else w.addEventListener('load', () => setTimeout(go, 150));
 }
 
 function tableHtml(t: ExportTable) {

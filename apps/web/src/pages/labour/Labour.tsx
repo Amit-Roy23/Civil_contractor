@@ -509,7 +509,7 @@ function AdvancesTab() {
   const rows = db.advances.filter((a) => s.seesSite(a.siteId) && (!siteId || a.siteId === siteId)).slice().reverse();
   const save = () => {
     if (!who || !amt) return toast.error('Choose person and amount');
-    const site = to === 'worker' ? n.lk.worker[who]!.siteId : siteId || 's1';
+    const site = to === 'worker' ? n.lk.worker[who]!.siteId : siteId || n.lk.subcon[who] && db.workOrders.find((w) => w.subContractorId === who)?.siteId || db.sites.find((x) => s.seesSite(x.id) && x.status === 'ACTIVE')?.id || '';
     insert('advances', { date: today(), siteId: site, workerId: to === 'worker' ? who : undefined, contractorId: to === 'contractor' ? who : undefined, amount: Number(amt), mode, remark } as any, `Advance ${inr(Number(amt))}`, 'Advance');
     toast.success('Advance recorded', 'Recovered automatically in the next wage run');
     setForm(false);
@@ -548,7 +548,13 @@ function AdvancesTab() {
 /* ================= Contractor ledgers ================= */
 function ContractorsTab() {
   const db = useDB();
-  const [c, setC] = useState('sc1');
+  if (!db.subcons.length) return <Callout>No labour contractors or sub-contractors yet. Add them in Masters › Contractors.</Callout>;
+  return <ContractorsTabBody />;
+}
+
+function ContractorsTabBody() {
+  const db = useDB();
+  const [c, setC] = useState(db.subcons.find((x) => x.kind === 'LABOUR_CONTRACTOR')?.id || db.subcons[0]?.id || '');
   const rows = useMemo(() => contractorLedger(db, c).slice().reverse(), [db, c]);
   const sc = db.subcons.find((x) => x.id === c)!;
   return (

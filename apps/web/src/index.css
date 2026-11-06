@@ -118,6 +118,21 @@
 }
 
 @layer base {
+  /* native drop-down lists: the open list takes the theme's colours, so no option is white-on-white
+     (a select with a transparent background, like the works filter, otherwise shows an unreadable list) */
+  select option,
+  select optgroup {
+    background-color: var(--surface);
+    color: var(--fg);
+  }
+  select option:checked {
+    background-color: var(--surface-2);
+    font-weight: 600;
+  }
+  select option:disabled {
+    color: var(--muted);
+  }
+
   html,
   body,
   #root {

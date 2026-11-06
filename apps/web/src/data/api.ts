@@ -72,6 +72,8 @@ export interface OtpNeeded {
 export interface LoginConfig {
   demo: null | { companyId: string; users: Array<{ id: ID; name: string; username: string; roleId: ID; role?: string; sites: number }> };
   needsCompany: boolean;
+  /** a new server with no company yet (MongoDB / serverless version) */
+  setup?: null | { templates: Array<{ id: string; label: string }>; keyConfigured: boolean };
 }
 export interface Snapshot {
   rev: number;
@@ -108,6 +110,7 @@ export interface RestoreCheck {
 
 export const api = {
   config: () => call<LoginConfig>('/auth/config'),
+  setup: (b: Record<string, unknown>) => call<{ ok: true; company: string; username: string; name: string }>('/setup', b),
   login: (username: string, password: string, company?: string) => call<SignedIn | OtpNeeded>('/auth/login', { username, password, company }),
   otpRequest: (login: string, company?: string) => call<{ ticket: string; phone: string; demo: boolean }>('/auth/otp/request', { login, company }),
   otpVerify: (ticket: string, code: string) => call<SignedIn>('/auth/otp/verify', { ticket, code }),

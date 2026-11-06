@@ -42,6 +42,9 @@ export default function Purchase() {
   );
 }
 
+/** the firm's central godown, whatever its id (the demo calls it "cs") */
+export const centralStoreId = (db: ReturnType<typeof useDB>) => db.stores.find((x) => x.type === 'CENTRAL' && x.active !== false)?.id || '';
+
 const supplierOpts = (db: ReturnType<typeof useDB>) => db.suppliers.filter((s) => s.active !== false).map((s) => ({ value: s.id, label: s.name, hint: `${s.code} · ${s.materials}` }));
 
 /* ================= Central store (STR) ================= */
@@ -52,14 +55,15 @@ function CentralTab() {
   const [view, setView] = useState<'stock' | 'ageing' | 'issues'>('stock');
   const [issue, setIssue] = useState(false);
   const range = { from: addDays(today(), -30), to: today() };
-  const reg = useMemo(() => stockRegister(db, 'cs', range), [db]); // eslint-disable-line react-hooks/exhaustive-deps
-  const lows = lowStock(db).filter((l) => l.storeId === 'cs');
-  const ageing = useMemo(() => stockAgeing(db, 'cs'), [db]);
-  const issues = useMemo(() => db.stockTxns.filter((t) => t.fromStoreId === 'cs' && t.type === 'ISSUE').slice().reverse(), [db]);
+  const cs = centralStoreId(db);
+  const reg = useMemo(() => (cs ? stockRegister(db, cs, range) : []), [db, cs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lows = lowStock(db).filter((l) => l.storeId === cs);
+  const ageing = useMemo(() => (cs ? stockAgeing(db, cs) : []), [db, cs]);
+  const issues = useMemo(() => db.stockTxns.filter((t) => t.fromStoreId === cs && t.type === 'ISSUE').slice().reverse(), [db, cs]);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger">
-        <Stat label="Central store value" value={s.showRates ? storeValue(db, 'cs') : reg.length} format={s.showRates ? inrCompact : (x) => `${Math.round(x)} items`} icon={<PackageCheck className="w-[18px] h-[18px]" />} tone="brand" />
+        <Stat label="Central store value" value={s.showRates ? storeValue(db, cs) : reg.length} format={s.showRates ? inrCompact : (x) => `${Math.round(x)} items`} icon={<PackageCheck className="w-[18px] h-[18px]" />} tone="brand" />
         <Stat label="Reorder alerts" value={lows.length} format={(x) => `${Math.round(x)}`} icon={<ShoppingCart className="w-[18px] h-[18px]" />} tone={lows.length ? 'bad' : 'good'} sub="Below minimum level" />
         <Stat label="Issues (30 days)" value={issues.filter((t) => t.date >= range.from).length} icon={<Truck className="w-[18px] h-[18px]" />} tone="info" sub="To sites, plants & vehicles" />
         <Stat label="Slow-moving items" value={ageing.filter((a) => a.days > 90).length} icon={<FileText className="w-[18px] h-[18px]" />} tone="warn" sub="Not issued in 90+ days" />
@@ -71,7 +75,7 @@ function CentralTab() {
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Select value={view} onChange={(v) => setView(v as typeof view)} className="w-56" options={[{ value: 'stock', label: 'Stock statement' }, { value: 'ageing', label: 'Stock ageing' }, { value: 'issues', label: 'Issue register' }]} />
-        {s.can('inventory', 'add') && s.seesStore('cs') && (
+        {s.can('inventory', 'add') && !!cs && s.seesStore(cs) && (
           <Button variant="primary" icon={<Truck className="w-4 h-4" />} onClick={() => setIssue(true)}>
             Issue material
           </Button>
@@ -90,7 +94,7 @@ function CentralTab() {
             { key: 'closing', header: 'In stock', align: 'right', value: (r) => round(r.closing, 2), cell: (r) => <b>{qty(r.closing, n.unit(r.materialId))}</b> },
             { key: 'min', header: 'Min level', align: 'right', value: (r) => n.lk.material[r.materialId]?.minStock || 0 },
             { key: 'reorder', header: 'Reorder qty', align: 'right', value: (r) => n.lk.material[r.materialId]?.reorderQty || 0, hideMobile: true },
-            { key: 'avg', header: 'Avg rate', align: 'right', rate: true, value: (r) => round(avgRate(db, 'cs', r.materialId), 2), cell: (r) => inr(avgRate(db, 'cs', r.materialId), true) },
+            { key: 'avg', header: 'Avg rate', align: 'right', rate: true, value: (r) => round(avgRate(db, cs, r.materialId), 2), cell: (r) => inr(avgRate(db, cs, r.materialId), true) },
             { key: 'value', header: 'Value', align: 'right', rate: true, value: (r) => Math.round(r.closingValue), cell: (r) => inr(r.closingValue) },
             { key: 'st', header: 'Status', value: (r) => (lows.some((l) => l.materialId === r.materialId) ? 'Reorder' : 'OK'), cell: (r) => (lows.some((l) => l.materialId === r.materialId) ? <Badge tone="bad">Reorder</Badge> : <Badge tone="good">OK</Badge>) },
           ]}
@@ -131,6 +135,7 @@ function CentralTab() {
 
 function IssueForm({ onClose }: { onClose: () => void }) {
   const db = useDB();
+  const cs = centralStoreId(db);
   const s = useSession();
   const [d, setD] = useState(today());
   const [toKind, setToKind] = useState<'store' | 'vehicle'>('store');
@@ -146,11 +151,11 @@ function IssueForm({ onClose }: { onClose: () => void }) {
     const valid = lines.filter((l) => l.materialId && Number(l.qty) > 0);
     if (!valid.length) return toast.error('Add materials');
     if (toKind === 'store' ? !to : !veh) return toast.error('Choose where the material goes');
-    if (linesShort(db, valid, 'cs', d)) return toast.error('Not enough stock in central store');
-    const value = sum(valid, (l) => toBase(db, l) * avgRate(db, 'cs', l.materialId));
+    if (linesShort(db, valid, cs, d)) return toast.error('Not enough stock in central store');
+    const value = sum(valid, (l) => toBase(db, l) * avgRate(db, cs, l.materialId));
     const status: StockTxn['status'] = value > db.settings.approvalLimits.issue && !s.isAdmin ? 'PENDING' : toKind === 'vehicle' ? 'POSTED' : 'IN_TRANSIT';
     const no = nextNo('MIN', d);
-    insert('stockTxns', { no, type: 'ISSUE', date: d, fromStoreId: 'cs', toStoreId: toKind === 'store' ? to : undefined, issueToVehicleId: toKind === 'vehicle' ? veh : undefined, lines: valid.map((l) => ({ materialId: l.materialId, qty: toBase(db, l), rate: 0, enteredQty: Number(l.qty), enteredUnit: l.unit })), vehicleNo, remark, status } as any, `Issue slip ${no}`, 'Stock voucher');
+    insert('stockTxns', { no, type: 'ISSUE', date: d, fromStoreId: cs, toStoreId: toKind === 'store' ? to : undefined, issueToVehicleId: toKind === 'vehicle' ? veh : undefined, lines: valid.map((l) => ({ materialId: l.materialId, qty: toBase(db, l), rate: 0, enteredQty: Number(l.qty), enteredUnit: l.unit })), vehicleNo, remark, status } as any, `Issue slip ${no}`, 'Stock voucher');
     toast.success(`${no} saved`, status === 'PENDING' ? `Value ${inr(value)} is above the ${inr(db.settings.approvalLimits.issue)} limit — sent for approval` : status === 'IN_TRANSIT' ? 'Site must confirm receipt' : 'Posted to vehicle cost');
     onClose();
   };
@@ -445,7 +450,7 @@ function PoForm({ onClose, fromReq, preset }: { onClose: () => void; fromReq?: R
   const s = useSession();
   const lk = lookup(db);
   const [sup, setSup] = useState(preset?.supplierId || '');
-  const [store, setStore] = useState(fromReq?.storeId || 'cs');
+  const [store, setStore] = useState(fromReq?.storeId || centralStoreId(db));
   const [delivery, setDelivery] = useState('FOR destination, unloading by supplier');
   const [payment, setPayment] = useState('30 days credit');
   const [lines, setLines] = useState<LineDraft[]>(
@@ -962,9 +967,15 @@ function DebitNoteForm({ onClose }: { onClose: () => void }) {
 /* ================= Supplier ledger (SUP-01) ================= */
 function SupplierLedgerTab() {
   const db = useDB();
+  if (!db.suppliers.length) return <Callout>No suppliers yet. Add them in Masters › Suppliers, or import them from Excel.</Callout>;
+  return <SupplierLedgerTabBody />;
+}
+
+function SupplierLedgerTabBody() {
+  const db = useDB();
   const s = useSession();
   const q = useQueryParam('s');
-  const [sup, setSup] = useState(q || 'sp01');
+  const [sup, setSup] = useState(q || db.suppliers.find((x) => x.active !== false)?.id || '');
   const [pay, setPay] = useState(false);
   const rows = useMemo(() => supplierLedger(db, sup).slice().reverse(), [db, sup]);
   const bal = rows[0]?.balance || 0;

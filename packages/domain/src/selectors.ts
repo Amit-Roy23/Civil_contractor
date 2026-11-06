@@ -851,7 +851,8 @@ export function plantReconciliation(db: DB, plantId: ID, month: string) {
   const theo = new Map<string, number>();
   for (const p of db.production.filter((x) => x.plantId === plantId && monthOf(x.date) === month)) for (const u of productionUse(db, p)) theo.set(u.materialId, (theo.get(u.materialId) || 0) + u.theoretical);
   return reg
-    .filter((r) => lk.material[r.materialId]?.kind !== 'OUTPUT' && !(plant.type === 'CRUSHER' && r.materialId !== 'm10'))
+    // a crusher's only raw material is what its recipes crush (boulders)
+    .filter((r) => lk.material[r.materialId]?.kind !== 'OUTPUT' && !(plant.type === 'CRUSHER' && !db.recipes.some((rc) => rc.split && rc.productId === r.materialId)))
     .map((r) => {
       const t = theo.get(r.materialId) || 0;
       const sp = db.stockpiles.filter((s) => s.plantId === plantId && s.materialId === r.materialId && s.date <= to).sort((a, b) => b.date.localeCompare(a.date))[0];

@@ -3,11 +3,11 @@
  * Only the app's own files are cached. Data never goes through here — entries made offline are kept
  * by the app's outbox and sent when the network returns.
  */
-const CACHE = 'wcm-shell-v1';
+const CACHE = 'wcm-shell-v2';
 const MAX_ASSETS = 150;
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png'])).then(() => self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/theme.js', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png'])).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

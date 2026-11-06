@@ -67,3 +67,35 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  docker:
+    name: Production images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        run: docker build --target api -t wcm-api:ci .
+      - name: Build web image
+        run: docker build --target web -t wcm-web:ci .
+      - name: Check the compose file
+        run: cp deploy/.env.example deploy/.env && sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=x/; s/^JWT_SECRET=.*/JWT_SECRET=x/; s/^JWT_REFRESH_SECRET=.*/JWT_REFRESH_SECRET=y/' deploy/.env && docker compose -f deploy/docker-compose.yml config -q
+
+  vercel:
+    name: Vercel build (app + MongoDB API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+      - name: Install (as Vercel does)
+        run: pnpm install --frozen-lockfile --filter @civil/web...
+      - name: Typecheck the server
+        run: cd apps/web && npx tsc --noEmit -p server/tsconfig.json
+      - name: Build .vercel/output
+        run: cd apps/web && node scripts/vercel-build.mjs
