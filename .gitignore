@@ -39,3 +39,7 @@ temp
 # production deploy
 deploy/backups/*
 !deploy/backups/.gitkeep
+
+# serverless build output
+.vercel
+dist-server

@@ -6,6 +6,7 @@ import { Button, toast } from '../components/ui/core';
 import { Field, Input, Segmented } from '../components/ui/fields';
 import { cn, initials } from '../lib/utils';
 import { navigate } from '../lib/router';
+import { SetupCard } from './Setup';
 
 const ROLE_META: Record<string, { icon: any; tint: string; blurb: string }> = {
   owner: { icon: Landmark, tint: 'from-amber-400 to-orange-600', blurb: 'Dashboards, approvals, profitability' },
@@ -174,7 +175,17 @@ export default function Login() {
       {/* form */}
       <div className="flex-1 flex items-start lg:items-center justify-center px-4 sm:px-8 py-8 lg:py-12">
         <div className="w-full max-w-[460px] anim-page">
-          {twoFa ? (
+          {cfg?.setup ? (
+            <SetupCard
+              cfg={cfg}
+              onDone={(u, co) => {
+                setUsername(u);
+                setCompany(co);
+                toast.success('Company created', `Sign in as ${u} with the password you chose`);
+                api.config().then(setCfg, (e) => setErr(e.message));
+              }}
+            />
+          ) : twoFa ? (
             <div className="bg-surface border border-line rounded-3xl shadow-card p-6 sm:p-8">
               <h2 className="text-xl font-bold">Two-factor verification</h2>
               <p className="text-sm text-fg-2 mt-1">{API_MODE ? 'Your account needs a second step. Enter the 6-digit OTP sent to your registered mobile.' : 'Admin accounts need a second step. Enter the 6-digit code from your authenticator app (demo: 123456).'}</p>

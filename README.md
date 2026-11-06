@@ -18,6 +18,10 @@ This system provides live **site-wise stock, cost, and profit/loss** governance,
 
 ## Going live on your own domain
 
+**Vercel + MongoDB Atlas (no server to look after):** see **[`docs/VERCEL_MONGODB.md`](docs/VERCEL_MONGODB.md)** — add `MONGODB_URI`, `JWT_SECRET`, `SETUP_KEY`, `CRON_SECRET` in Vercel, connect the domain, then create the company on the first-time set-up screen.
+
+**Or one server with Docker + PostgreSQL:**
+
 One server, one command, free HTTPS: see **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
 
 ```bash

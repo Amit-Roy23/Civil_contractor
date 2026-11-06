@@ -142,5 +142,7 @@ The full stack was built from this repository and run with `DOMAIN=localhost`, w
 
 ## Other ways to host
 
+- **Vercel + MongoDB Atlas:** see [VERCEL_MONGODB.md](VERCEL_MONGODB.md). No server to look after; set-up from the browser.
+
 - **Vercel (app) + Render (API) + a managed PostgreSQL:** see `docs/SERVER_MODE.md`. No server to look after, but two domains to set up, and a monthly cost per service.
 - **Behind Cloudflare:** set the DNS record to "DNS only" (grey cloud). If you want the orange-cloud proxy, set SSL to "Full (strict)".
