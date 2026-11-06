@@ -178,14 +178,25 @@ function slug(s: string) {
 
 /* ---------------- PDF (print) ---------------- */
 
-/** letterhead from the company profile (Masters → Company) */
-function printHeader() {
-  const c = getDB().company;
-  const esc = (s: string) => s.replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]!);
-  return { name: esc(c.name || ''), line: esc([c.gstin && `GSTIN ${c.gstin}`, c.address].filter(Boolean).join(' · ')) };
+/** the firm whose letterhead is printed: given, else the first firm, else the company profile */
+export interface Letterhead {
+  name: string;
+  line: string;
+  contact: string;
+  logo?: string;
+  signature?: string;
+  signatory: string;
 }
+export function letterheadOf(firmId?: string): Letterhead {
+  const db = getDB();
+  const f = db.firms.find((x) => x.id === firmId) || db.firms[0];
+  if (f) return { name: f.tradeName || f.legalName, line: [f.gstin && `GSTIN ${f.gstin}`, f.address].filter(Boolean).join(' · '), contact: [f.phone, f.email].filter(Boolean).join(' · '), logo: f.logo, signature: f.signature, signatory: f.contactName || f.legalName };
+  const c = db.company;
+  return { name: c.name || '', line: [c.gstin && `GSTIN ${c.gstin}`, c.address].filter(Boolean).join(' · '), contact: [c.phone, c.email].filter(Boolean).join(' · '), signatory: c.name };
+}
+const imgOk = (s?: string) => !!s && /^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/.test(s);
 
-function printHtml(title: string, body: string) {
+function printHtml(title: string, body: string, lh: Letterhead = letterheadOf()) {
   const w = window.open('', '_blank', 'width=1000,height=800');
   if (!w) {
     alert('Please allow pop-ups to export PDF.');
@@ -202,9 +213,10 @@ function printHtml(title: string, body: string) {
   tfoot td{font-weight:700;background:#fafafa} .meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;margin:10px 0}
   .meta div span{color:#666} .foot{margin-top:28px;display:flex;justify-content:space-between;color:#555}
   .sig{border-top:1px solid #999;padding-top:4px;width:180px;text-align:center}
+  .letter p{font-size:12px;line-height:1.6;margin:0 0 10px} .letter .to{margin:14px 0} .letter .subj{font-weight:700;margin:12px 0}
   @page{size:A4;margin:12mm}
 </style></head><body>
-<div class="hd"><div><div class="co">${printHeader().name}</div><div class="sub">${printHeader().line}</div></div>
+<div class="hd"><div style="display:flex;gap:12px;align-items:center">${imgOk(lh.logo) ? `<img src="${lh.logo}" style="height:46px;max-width:120px;object-fit:contain">` : ''}<div><div class="co">${esc(lh.name)}</div><div class="sub">${esc(lh.line)}</div>${lh.contact ? `<div class="sub">${esc(lh.contact)}</div>` : ''}</div></div>
 <div class="sub">Printed ${new Date().toLocaleString('en-IN')}</div></div>
 ${body}
 <script>window.onload=()=>{setTimeout(()=>window.print(),150)}</script>
@@ -232,7 +244,9 @@ export function printDocument(opts: {
   table: ExportTable;
   summary?: Array<[string, string]>;
   footerNote?: string;
+  firmId?: string;
 }) {
+  const lh = letterheadOf(opts.firmId);
   const meta = `<div class="meta">${opts.meta.map(([k, v]) => `<div><span>${esc(k)}:</span> <b>${esc(v)}</b></div>`).join('')}</div>`;
   const summary = opts.summary
     ? `<table style="width:320px;margin-left:auto">${opts.summary
@@ -243,7 +257,28 @@ export function printDocument(opts: {
     opts.title,
     `<h1>${esc(opts.title)}</h1>${meta}${tableHtml(opts.table)}${summary}
      ${opts.footerNote ? `<p class="sub" style="margin-top:12px">${esc(opts.footerNote)}</p>` : ''}
-     <div class="foot"><div class="sig">Prepared by</div><div class="sig">Checked by</div><div class="sig">Authorised signatory</div></div>`,
+     <div class="foot"><div class="sig">Prepared by</div><div class="sig">Checked by</div><div class="sig">${imgOk(lh.signature) ? `<img src="${lh.signature}" style="height:36px;display:block;margin:0 auto 2px">` : ''}Authorised signatory</div></div>`,
+    lh,
+  );
+}
+
+/** a letter on the firm's letterhead (BG extension, security deposit release …) */
+export function printLetter(opts: { firmId?: string; ref: string; date: string; to: string[]; subject: string; paragraphs: string[]; enclosures?: string[] }) {
+  const lh = letterheadOf(opts.firmId);
+  printHtml(
+    opts.subject,
+    `<div class="letter">
+      <div style="display:flex;justify-content:space-between"><p>Ref: ${esc(opts.ref)}</p><p>Date: ${esc(opts.date)}</p></div>
+      <div class="to"><p>To,<br>${opts.to.map(esc).join('<br>')}</p></div>
+      <p class="subj">Sub: ${esc(opts.subject)}</p>
+      <p>Sir,</p>
+      ${opts.paragraphs.map((x) => `<p>${esc(x)}</p>`).join('')}
+      ${opts.enclosures?.length ? `<p>Enclosures:<br>${opts.enclosures.map((e, i) => `${i + 1}. ${esc(e)}`).join('<br>')}</p>` : ''}
+      <p style="margin-top:28px">Yours faithfully,</p>
+      ${imgOk(lh.signature) ? `<img src="${lh.signature}" style="height:44px">` : '<div style="height:44px"></div>'}
+      <p><b>${esc(lh.signatory)}</b><br>${esc(lh.name)}</p>
+    </div>`,
+    lh,
   );
 }
 

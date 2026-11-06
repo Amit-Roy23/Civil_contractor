@@ -12,6 +12,7 @@ import { ColumnChart } from '../../components/ui/charts';
 import { addDays, date, dateShort, daysBetween, inr, inrCompact, num, qty, today } from '../../lib/format';
 import { printDocument } from '../../lib/export';
 import { cn, groupBy, round, sum } from '../../lib/utils';
+import { ComplianceExtra, RegistersTab, SafetyTab, SubconCompare } from './LabourRegs';
 import { DecideButtons, Money, useAutoOpen, useModuleTab, useNames, useNewParam,} from '../shared';
 
 const TRADES: Trade[] = ['Mason', 'Helper', 'Carpenter', 'Bar Bender', 'Operator', 'Driver', 'Electrician', 'Supervisor'];
@@ -28,7 +29,9 @@ export default function Labour() {
       {tab === 'advances' && <AdvancesTab />}
       {tab === 'contractors' && <ContractorsTab />}
       {tab === 'subcontract' && <SubcontractTab />}
-      {tab === 'compliance' && <ComplianceTab />}
+      {tab === 'compliance' && <div className="space-y-4"><ComplianceExtra /><ComplianceTab /></div>}
+      {tab === 'registers' && <RegistersTab />}
+      {tab === 'safety' && <SafetyTab />}
     </div>
   );
 }
@@ -655,6 +658,7 @@ function SubcontractTab() {
           })()}
         </Drawer>
       )}
+      <SubconCompare />
     </div>
   );
 }

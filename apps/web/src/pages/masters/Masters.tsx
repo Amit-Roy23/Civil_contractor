@@ -11,6 +11,7 @@ import { inr, inrCompact, qty } from '../../lib/format';
 import { cn } from '../../lib/utils';
 import { materialOptions, useModuleTab, useQueryParam } from '../shared';
 import { templateById } from '@civil/domain/imports';
+import { tdsSections } from '@civil/domain/billing';
 import { ClientForm, FirmsTab, WorksTab } from './WorkForm';
 import { ImportDialog, ImportExportTab, exportTemplate } from './ImportExport';
 
@@ -36,6 +37,8 @@ interface MasterDef {
 }
 
 const opt = (arr: string[]) => () => arr.map((x) => ({ value: x, label: x }));
+const ENTITY = () => [{ value: '', label: '—' }, { value: 'INDIVIDUAL', label: 'Individual' }, { value: 'HUF', label: 'HUF' }, { value: 'FIRM', label: 'Firm' }, { value: 'LLP', label: 'LLP' }, { value: 'COMPANY', label: 'Company' }, { value: 'OTHER', label: 'Other' }];
+const tdsOpts = (db: DB) => [{ value: '', label: 'As per party type (default)' }, { value: 'NONE', label: 'No TDS' }, ...tdsSections(db).map((x) => ({ value: x.code, label: x.label }))];
 const sitesOpt = (db: DB) => db.sites.filter((s) => !(s as any).outOfScope && s.status !== 'COMPLETED').map((s) => ({ value: s.id, label: s.short }));
 const activeCell = { key: 'active', header: 'Status', value: (r: any) => (r.active === false ? 'Inactive' : 'Active'), cell: (r: any) => (r.active === false ? <Badge>Inactive</Badge> : <Badge tone="good" dot>Active</Badge>) };
 
@@ -71,6 +74,7 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'address', label: 'Address', span: 2 }, { key: 'contact', label: 'Contact person' }, { key: 'phone', label: 'Phone' }, { key: 'bank', label: 'Bank details', span: 2 },
       { key: 'materials', label: 'Materials supplied', span: 2 }, { key: 'kind', label: 'Type', type: 'select', options: () => [{ value: 'MATERIAL', label: 'Material' }, { value: 'FUEL_PUMP', label: 'Fuel pump' }, { value: 'VEHICLE_OWNER', label: 'Vehicle owner' }, { value: 'SERVICE', label: 'Service' }] },
       { key: 'creditDays', label: 'Credit days', type: 'number' }, { key: 'openingBalance', label: 'Opening balance', type: 'money' },
+      { key: 'entityType', label: 'PAN holder type', type: 'select', options: ENTITY, hint: 'Blank = read from the PAN' }, { key: 'tdsCode', label: 'TDS on payments', type: 'select', options: tdsOpts }, { key: 'transporter10', label: 'Transporter with ≤10 goods carriages (declaration on file — no TDS)', type: 'toggle' },
     ],
     defaults: { kind: 'MATERIAL', creditDays: 30, openingBalance: 0 },
     cols: () => [
@@ -103,6 +107,7 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'rateType', label: 'Rate type', type: 'select', options: () => [{ value: 'PER_DAY', label: 'Per day' }, { value: 'PER_UNIT', label: 'Per unit of work' }, { value: 'LUMP_SUM', label: 'Lump sum' }] },
       { key: 'trade', label: 'Trade' }, { key: 'phone', label: 'Phone' }, { key: 'pan', label: 'PAN' }, { key: 'gstin', label: 'GSTIN' }, { key: 'bank', label: 'Bank details', span: 2 }, { key: 'openingBalance', label: 'Opening balance', type: 'money' },
       { key: 'licenceNo', label: 'Labour licence no.' }, { key: 'licenceExpiry', label: 'Licence expiry', type: 'date' }, { key: 'pfNo', label: 'PF no.' }, { key: 'esiNo', label: 'ESI no.' }, { key: 'bocwNo', label: 'BOCW registration' },
+      { key: 'entityType', label: 'PAN holder type', type: 'select', options: ENTITY, hint: 'Blank = read from the PAN' }, { key: 'tdsCode', label: 'TDS on payments', type: 'select', options: tdsOpts },
     ],
     defaults: { kind: 'LABOUR_CONTRACTOR', rateType: 'PER_DAY', openingBalance: 0, tradeRates: { Mason: 850, Helper: 520 } },
     cols: () => [
@@ -121,9 +126,12 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'trade', label: 'Trade / skill', type: 'select', options: opt(['Mason', 'Helper', 'Carpenter', 'Bar Bender', 'Operator', 'Driver', 'Electrician', 'Supervisor']) },
       { key: 'ownership', label: 'Own / contractor', type: 'select', options: () => [{ value: 'OWN', label: 'Own worker' }, { value: 'CONTRACTOR', label: "Contractor's worker" }] },
       { key: 'wageRate', label: 'Wage per day', type: 'money', required: true }, { key: 'otRate', label: 'OT rate per hour', type: 'money' },
-      { key: 'siteId', label: 'Assigned work', type: 'select', options: sitesOpt, required: true }, { key: 'upi', label: 'Bank / UPI' }, { key: 'joiningDate', label: 'Joining date', type: 'date' },
+      { key: 'siteId', label: 'Assigned work', type: 'select', options: sitesOpt, required: true }, { key: 'upi', label: 'UPI' }, { key: 'joiningDate', label: 'Joining date', type: 'date' },
+      { key: 'fatherName', label: "Father's / husband's name" }, { key: 'gender', label: 'Gender', type: 'select', options: () => [{ value: 'M', label: 'Male' }, { value: 'F', label: 'Female' }, { value: 'O', label: 'Other' }] }, { key: 'dob', label: 'Date of birth', type: 'date' }, { key: 'address', label: 'Permanent address' },
+      { key: 'bankAccount', label: 'Bank account no.' }, { key: 'ifsc', label: 'IFSC' },
+      { key: 'pfMember', label: 'EPF member', type: 'toggle' }, { key: 'uan', label: 'UAN (12 digits)' }, { key: 'esiMember', label: 'ESI member', type: 'toggle' }, { key: 'esicNo', label: 'ESIC IP no.' }, { key: 'leftOn', label: 'Left on', type: 'date' },
     ],
-    defaults: { ownership: 'OWN', trade: 'Helper', wageRate: 520, otRate: 98 },
+    defaults: { ownership: 'OWN', trade: 'Helper', wageRate: 520, otRate: 98, gender: 'M', pfMember: false, esiMember: false },
     cols: (db) => [
       { key: 'code', header: 'ID', value: (r) => r.code, cell: (r) => <span className="font-mono text-xs">{r.code}</span> },
       { key: 'name', header: 'Worker', primary: true, value: (r) => r.name, cell: (r) => <div className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-surface-3 text-[10px] font-bold flex items-center justify-center">{r.name.split(' ').map((p: string) => p[0]).join('')}</span><div><div className="font-medium">{r.name}</div><div className="text-[11px] text-muted">{r.aadhaar}</div></div></div> },
@@ -188,6 +196,10 @@ const MASTERS: Record<string, MasterDef> = {
       { key: 'location', label: 'Location', span: 2 }, { key: 'storeId', label: 'Linked store', type: 'select', options: (db) => db.stores.filter((s) => s.type === 'PLANT').map((s) => ({ value: s.id, label: s.name })), required: true },
       { key: 'firmId', label: 'Unit name / firm', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.firms.map((f) => ({ value: f.id, label: f.tradeName || f.legalName }))] },
       { key: 'equipment', label: 'Main equipment', type: 'textarea', span: 2 }, { key: 'power', label: 'Power' }, { key: 'burnerFuel', label: 'Burner fuel' },
+      { key: 'burnerFuelId', label: 'Burner fuel material (LDO / FO)', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.materials.filter((m) => m.category === 'Fuel & Lubricants').map((m) => ({ value: m.id, label: m.name }))], hint: 'Burner fuel used in production leaves the plant store' },
+      { key: 'ldoPerMtNorm', label: 'Burner fuel norm (L / MT)', type: 'number' },
+      { key: 'dgFuelId', label: 'DG set fuel material (diesel)', type: 'select', options: (db) => [{ value: '', label: '—' }, ...db.materials.filter((m) => m.category === 'Fuel & Lubricants').map((m) => ({ value: m.id, label: m.name }))] },
+      { key: 'dieselPerMtNorm', label: 'DG diesel norm (L / MT)', type: 'number' },
     ],
     defaults: { type: 'HOT_MIX', costMode: 'ACTUAL', fixedRate: {}, subType: 'DRUM_MIX', inCharges: [] },
     cols: (db) => [
@@ -291,6 +303,7 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
   const [v, setV] = useState<Record<string, any>>({ ...rec });
   const [docs, setDocs] = useState<VehicleDoc[]>(rec.docs || []);
   const [inCharges, setInCharges] = useState<Array<{ name: string; from: string; userId?: string }>>(rec.inCharges || []);
+  const [locs, setLocs] = useState<Array<{ name: string; materialId: string; capacity: number | ''; unit: string }>>(rec.locations || []);
   const set = (k: string, x: unknown) => setV((o) => ({ ...o, [k]: x }));
   const save = () => {
     for (const f of def.fields) if (f.required && (v[f.key] === undefined || v[f.key] === '')) return toast.error(`${f.label} is required`);
@@ -302,6 +315,10 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
       out[f.key] = x;
     }
     if (def.coll === 'vehicles') out.docs = docs;
+    if (def.coll === 'stores') {
+      if (locs.some((l) => !l.name || !l.materialId)) return toast.error('Each tank / stockpile needs a name and a material');
+      out.locations = locs.map((l) => ({ ...l, capacity: Number(l.capacity) || 0, unit: l.unit || db.materials.find((m) => m.id === l.materialId)?.unit || '' }));
+    }
     if (def.coll === 'plants') {
       if (inCharges.some((h) => !h.name || !h.from)) return toast.error('Each in-charge needs a name and an effective date');
       out.inCharges = inCharges;
@@ -356,6 +373,26 @@ function MasterForm({ def, rec, onClose }: { def: MasterDef; rec: any; onClose: 
           </Field>
         ))}
       </div>
+      {def.coll === 'stores' && (
+        <div className="mt-6">
+          <Section title="Tanks and stockpiles (for daily dips)" action={<Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setLocs([...locs, { name: '', materialId: '', capacity: '', unit: '' }])}>Add tank / stockpile</Button>}>
+            <div className="space-y-2">
+              {locs.map((l, i) => {
+                const up = (p: Partial<typeof l>) => setLocs(locs.map((x, j) => (j === i ? { ...x, ...p } : x)));
+                return (
+                  <div key={i} className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <Input value={l.name} onChange={(e) => up({ name: e.target.value })} placeholder="Bitumen tank 1" />
+                    <Select value={l.materialId} onChange={(x) => up({ materialId: x, unit: db.materials.find((m) => m.id === x)?.unit || '' })} placeholder="Material" options={db.materials.filter((m) => m.kind !== 'OUTPUT' || m.category === 'Bitumen').map((m) => ({ value: m.id, label: m.name }))} />
+                    <NumberInput value={l.capacity} onChange={(x) => up({ capacity: x })} suffix={l.unit || 'capacity'} />
+                    <Button size="sm" variant="ghost" onClick={() => setLocs(locs.filter((_, j) => j !== i))}>Remove</Button>
+                  </div>
+                );
+              })}
+              {!locs.length && <p className="text-sm text-muted">Add the bitumen / LDO / diesel tanks and aggregate stockpiles that are dipped or measured daily.</p>}
+            </div>
+          </Section>
+        </div>
+      )}
       {def.coll === 'plants' && (
         <div className="mt-6">
           <Section title="In-charge (with effective date)" action={<Button size="sm" variant="ghost" icon={<Plus className="w-4 h-4" />} onClick={() => setInCharges([...inCharges, { name: '', from: '' }])}>Change in-charge</Button>}>

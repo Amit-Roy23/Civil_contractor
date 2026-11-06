@@ -77,6 +77,7 @@ function StockTab() {
     { key: 'received', header: 'Received', align: 'right', value: (r) => round(r.received, 2), cell: (r) => <span className="text-good">{r.received ? `+${qty(r.received)}` : '—'}</span> },
     { key: 'consumed', header: 'Consumed', align: 'right', value: (r) => round(r.consumed, 2), cell: (r) => (r.consumed ? qty(r.consumed) : '—') },
     { key: 'transferred', header: 'Issued / transferred', align: 'right', value: (r) => round(r.transferred, 2), cell: (r) => (r.transferred ? qty(r.transferred) : '—'), hideMobile: true },
+    { key: 'sold', header: 'Sold', align: 'right', value: (r) => round(r.sold, 2), cell: (r) => (r.sold ? qty(r.sold) : '—'), hideMobile: true },
     { key: 'returned', header: 'Returned', align: 'right', value: (r) => round(r.returned, 2), cell: (r) => (r.returned ? qty(r.returned) : '—'), hideMobile: true },
     { key: 'wasted', header: 'Wasted', align: 'right', value: (r) => round(r.wasted, 2), cell: (r) => (r.wasted ? <span className="text-bad">{qty(r.wasted)}</span> : '—'), hideMobile: true },
     { key: 'adjusted', header: 'Adjusted', align: 'right', value: (r) => round(r.adjusted, 2), cell: (r) => (r.adjusted ? qty(r.adjusted) : '—'), hideMobile: true },
@@ -565,6 +566,7 @@ function TransitTab() {
   const { siteId } = useSiteFilter();
   const [confirm, setConfirm] = useState<TransitRow | null>(null);
   const [recvQty, setRecvQty] = useState<number | ''>('');
+  const [arr, setArr] = useState<{ time: string; temp: number | ''; boq: string; chain: string }>({ time: '', temp: '', boq: '', chain: '' });
   const rows = useMemo(() => materialsInTransit(db).filter((r) => (!r.toSiteId || s.seesSite(r.toSiteId)) && (!siteId || r.toSiteId === siteId)), [db, s, siteId]);
   const doConfirm = () => {
     if (!confirm) return;
@@ -572,7 +574,8 @@ function TransitTab() {
       const d = db.dispatches.find((x) => x.id === confirm.id)!;
       const q = recvQty === '' ? d.qty : Number(recvQty);
       const diffPct = ((d.qty - q) / d.qty) * 100;
-      update('dispatches', d.id, { status: 'RECEIVED', receivedQty: q, receivedAt: new Date().toISOString() }, `${d.no} received at site`, 'Dispatch');
+      update('dispatches', d.id, { status: 'RECEIVED', receivedQty: q, receivedAt: new Date().toISOString(), arrivalTime: arr.time || new Date().toTimeString().slice(0, 5), ...(arr.temp !== '' ? { arrivalTemp: Number(arr.temp) } : {}), ...(arr.boq ? { boqItemId: arr.boq } : {}), ...(arr.chain ? { chainage: arr.chain } : {}) }, `${d.no} received at site`, 'Dispatch');
+      if (arr.temp !== '' && Number(arr.temp) < 120 && db.plants.find((p) => p.id === d.plantId)?.type === 'HOT_MIX') toast.warn('Mix arrived below 120 °C', 'Recorded on the challan — check before laying');
       if (Math.abs(diffPct) > db.settings.tolerance.dispatch) toast.warn('Quantity difference flagged', `${diffPct.toFixed(1)}% short vs dispatch slip`);
       else toast.success('Receipt confirmed');
     } else {
@@ -595,7 +598,7 @@ function TransitTab() {
           { key: 'to', header: 'To', value: (r) => r.toName },
           { key: 'material', header: 'Material', value: (r) => r.material, cell: (r) => <span>{r.material} · <b>{qty(r.qty, r.unit)}</b></span> },
           { key: 'vehicle', header: 'Vehicle', value: (r) => r.vehicle, hideMobile: true },
-          { key: 'act', header: '', sortable: false, cell: (r) => (s.can('inventory', 'add') || s.can('plant', 'add') ? <Button size="sm" variant="primary" onClick={(e) => (e.stopPropagation(), setConfirm(r), setRecvQty(r.qty))}>Confirm receipt</Button> : null) },
+          { key: 'act', header: '', sortable: false, cell: (r) => (s.can('inventory', 'add') || s.can('plant', 'add') ? <Button size="sm" variant="primary" onClick={(e) => (e.stopPropagation(), setConfirm(r), setRecvQty(r.qty), setArr({ time: new Date().toTimeString().slice(0, 5), temp: '', boq: db.dispatches.find((x) => x.id === r.id)?.boqItemId || '', chain: db.dispatches.find((x) => x.id === r.id)?.chainage || '' }))}>Confirm receipt</Button> : null) },
         ]}
       />
       <Modal
@@ -618,6 +621,14 @@ function TransitTab() {
               <Field label="Quantity received (as per site weighbridge)" hint={`Differences beyond ${db.settings.tolerance.dispatch}% are flagged`}>
                 <NumberInput value={recvQty} onChange={setRecvQty} suffix={confirm.unit} />
               </Field>
+            )}
+            {confirm.kind === 'Plant dispatch' && (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Arrival time"><Input type="time" value={arr.time} onChange={(e) => setArr({ ...arr, time: e.target.value })} /></Field>
+                <Field label="Temperature at site"><NumberInput value={arr.temp} onChange={(v) => setArr({ ...arr, temp: v })} suffix="°C" /></Field>
+                <Field label="BOQ item laid"><Select value={arr.boq} onChange={(v) => setArr({ ...arr, boq: v })} placeholder="—" options={db.boq.filter((b) => b.siteId === confirm.toSiteId).map((b) => ({ value: b.id, label: `${b.itemNo} ${b.description.slice(0, 36)}` }))} /></Field>
+                <Field label="Chainage laid"><Input value={arr.chain} onChange={(e) => setArr({ ...arr, chain: e.target.value })} /></Field>
+              </div>
             )}
           </div>
         )}

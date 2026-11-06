@@ -279,10 +279,51 @@ export const TEMPLATES: ImportTemplate[] = [
       { header: 'Wage per day', key: 'wageRate', type: 'number', required: true },
       { header: 'OT rate per hour', key: 'otRate', type: 'number' },
       { header: 'Work', key: 'siteId', required: true, ...ref('sites', ['code', 'short', 'name'], 'short') },
-      { header: 'Bank / UPI', key: 'upi' },
+      { header: 'UPI', key: 'upi' },
       { header: 'Joining date', key: 'joiningDate', type: 'date' },
+      { header: "Father's / husband's name", key: 'fatherName' },
+      { header: 'Gender', key: 'gender', type: 'enum', options: opts(['M', 'Male'], ['F', 'Female'], ['O', 'Other']) },
+      { header: 'Date of birth', key: 'dob', type: 'date' },
+      { header: 'Bank account no.', key: 'bankAccount' },
+      { header: 'IFSC', key: 'ifsc' },
+      { header: 'EPF member', key: 'pfMember', type: 'bool' },
+      { header: 'UAN', key: 'uan', hint: '12 digits' },
+      { header: 'ESI member', key: 'esiMember', type: 'bool' },
+      { header: 'ESIC IP no.', key: 'esicNo' },
     ],
     rows: (db) => db.workers,
+  },
+  {
+    // FLT-03: daily km / engine hours / fuel from the Tata Fleet Edge "trip summary" export
+    id: 'fleet-edge',
+    title: 'Fleet Edge logbook',
+    coll: 'logs',
+    description: 'Daily vehicle summary exported from Fleet Edge (or any telematics): one row per vehicle per day. The work is the vehicle\'s current work unless given.',
+    columns: [
+      { header: 'Vehicle number', key: 'vehicleId', required: true, ...ref('vehicles', ['regNo', 'code'], 'regNo') },
+      { header: 'Date', key: 'date', type: 'date', required: true },
+      { header: 'Start odometer', key: 'openKm', type: 'number' },
+      { header: 'End odometer', key: 'closeKm', type: 'number' },
+      { header: 'Start engine hours', key: 'openHr', type: 'number' },
+      { header: 'End engine hours', key: 'closeHr', type: 'number' },
+      { header: 'Fuel consumed (L)', key: 'fuelLitres', type: 'number' },
+      { header: 'Idle hours', key: 'idleHours', type: 'number' },
+      { header: 'Work', key: 'siteId', ...ref('sites', ['code', 'short', 'name'], 'short') },
+    ],
+    toOps: (db, rows, errors) =>
+      rows.flatMap(({ row, rec }) => {
+        const v = db.vehicles.find((x) => x.id === rec.vehicleId);
+        const siteId = rec.siteId || v?.siteId;
+        if (!siteId) {
+          errors.push({ row, column: 'Work', message: 'Vehicle has no current work — give the work' });
+          return [];
+        }
+        if (db.logs.some((l) => l.vehicleId === rec.vehicleId && l.date === rec.date)) {
+          errors.push({ row, column: 'Date', message: 'A logbook entry for this vehicle and date already exists' });
+          return [];
+        }
+        return [{ row, kind: 'insert' as const, coll: 'logs' as const, rec: { ...rec, siteId, driver: v?.driver || '', trips: 0, route: 'Fleet Edge', idleHours: rec.idleHours || 0, source: 'FLEET_EDGE' } }];
+      }),
   },
   {
     id: 'vehicles',
@@ -318,8 +359,10 @@ export const TEMPLATES: ImportTemplate[] = [
       { header: 'Description', key: 'description', required: true },
       { header: 'Unit', key: 'unit', required: true },
       { header: 'Quantity', key: 'qty', type: 'number', required: true },
-      { header: 'Rate', key: 'rate', type: 'number', required: true },
+      { header: 'Estimate rate', key: 'estRate', type: 'number', hint: "Department's rate — the tendered % of the work is applied" },
+      { header: 'Rate', key: 'rate', type: 'number', hint: 'Contract rate; leave blank to work it out from the estimate rate' },
     ],
+    defaults: { rate: 0 },
     rows: (db) => db.boq,
     toOps: (db, rows, errors) => {
       const seen = new Set(db.boq.map((b) => `${b.siteId}|${norm(b.itemNo)}`));
@@ -327,11 +370,29 @@ export const TEMPLATES: ImportTemplate[] = [
       for (const r of rows) {
         const k = `${r.rec.siteId}|${norm(r.rec.itemNo)}`;
         if (seen.has(k)) errors.push({ row: r.row, column: 'Item no.', message: `Item ${r.rec.itemNo} already exists for this work` });
+        if (!(r.rec.rate > 0) && !(r.rec.estRate > 0)) errors.push({ row: r.row, column: 'Rate', message: 'Give the rate or the estimate rate' });
         seen.add(k);
         ops.push({ row: r.row, kind: 'insert', coll: 'boq', rec: r.rec });
       }
       return ops;
     },
+  },
+  {
+    id: 'tax-credits',
+    title: 'Tax credits',
+    coll: 'taxCredits',
+    adminOnly: true,
+    description: 'GST TDS from GSTR-7A certificates and income-tax TDS from Form 26AS / AIS, one row per credit. They are matched with your bills in Contracts › Tax & Tally.',
+    columns: [
+      { header: 'Type', key: 'kind', type: 'enum', required: true, options: opts(['GSTR7A', 'GST TDS (GSTR-7A)'], ['AS26', 'Income-tax TDS (26AS / AIS)']) },
+      { header: 'Date', key: 'date', type: 'date', required: true },
+      { header: 'Deductor', key: 'deductor', hint: 'e.g. EE, PWD (R&B) Dharmanagar Division' },
+      { header: 'Deductor GSTIN / TAN', key: 'deductorId' },
+      { header: 'Taxable value / amount paid', key: 'base', type: 'number' },
+      { header: 'Tax credited', key: 'amount', type: 'number', required: true },
+      { header: 'Certificate / reference no.', key: 'certNo' },
+    ],
+    rows: (db) => db.taxCredits,
   },
   {
     id: 'opening-stock',

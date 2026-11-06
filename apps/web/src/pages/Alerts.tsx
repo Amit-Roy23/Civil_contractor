@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, BellRing, Boxes, CalendarClock, ClipboardX, FileWarning, Fuel, IndianRupee, TrendingDown } from 'lucide-react';
+import { ArrowRight, BellRing, Boxes, CalendarClock, ClipboardX, FileWarning, Fuel, IndianRupee, TrendingDown, ShieldAlert, FlaskConical } from 'lucide-react';
 import { useDB } from '../data/store';
 import { useSession } from '../data/session';
 import { alerts, type Alert } from '../data/selectors';
@@ -17,6 +17,8 @@ const CODES: Record<Alert['code'], { label: string; icon: any }> = {
   'ALT-05': { label: 'Daily entries missing', icon: ClipboardX },
   'ALT-06': { label: 'Cost over budget / work done', icon: TrendingDown },
   'ALT-07': { label: 'Payments & receivables due', icon: IndianRupee },
+  'ALT-08': { label: 'Guarantees expiring', icon: ShieldAlert },
+  'ALT-09': { label: 'Plant, quality & labour compliance', icon: FlaskConical },
 };
 
 export default function Alerts() {

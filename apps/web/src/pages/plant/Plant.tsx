@@ -1,4 +1,6 @@
 import { vehicleLabel } from '@civil/domain/works';
+import { productionRatios } from '@civil/domain/ops';
+import { CostByMix, LabTab, PlantMaintTab, SalesTab, SubsidyTab, TanksTab } from './PlantOps';
 import { useMemo, useState } from 'react';
 import { CircleCheck, Factory, Gauge, Plus, Truck } from 'lucide-react';
 import { useDB, insert, update, nextNo } from '../../data/store';
@@ -28,6 +30,11 @@ export default function Plant() {
       {tab === 'allocation' && <AllocationTab />}
       {tab === 'cost' && <CostTab />}
       {tab === 'reconciliation' && <ReconTab />}
+      {tab === 'tanks' && <TanksTab />}
+      {tab === 'sales' && <SalesTab />}
+      {tab === 'lab' && <LabTab scope="plant" />}
+      {tab === 'maintenance' && <PlantMaintTab />}
+      {tab === 'subsidy' && <SubsidyTab />}
     </div>
   );
 }
@@ -174,10 +181,19 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
   const s = useSession();
   const lk = lookup(db);
   const plants = usePlants();
-  const [plantId, setPlantId] = useState(plants[0]?.id || 'p1');
-  const plant = lk.plant[plantId]!;
+  const [plantId, setPlantId] = useState(plants[0]?.id || '');
+  const plant = (lk.plant[plantId] || { type: 'HOT_MIX', storeId: '', name: '' }) as PlantT;
   const isCrusher = plant.type === 'CRUSHER';
-  const products = db.recipes.filter((r) => r.productId && lk.material[r.productId] && (isCrusher ? !!r.split : !r.split && lk.material[r.productId]?.kind === 'OUTPUT' && (plant.type === 'HOT_MIX' ? ['m30', 'm31'] : ['m32', 'm33', 'm34']).includes(r.productId)));
+  // a mix belongs to a plant by what it contains: bitumen for hot mix, cement for batching
+  const fits = (rid: string, p: PlantT) => {
+    const r = lk.recipe[rid];
+    if (!r?.productId || !lk.material[r.productId]) return false;
+    if (p.type === 'CRUSHER') return !!r.split;
+    if (r.split || lk.material[r.productId]?.kind === 'RAW') return false;
+    const cats = r.lines.map((l) => lk.material[l.materialId]?.category);
+    return p.type === 'HOT_MIX' ? cats.includes('Bitumen') : p.type === 'BATCHING' ? cats.includes('Cement') : !cats.includes('Bitumen') && !cats.includes('Cement');
+  };
+  const products = db.recipes.filter((r) => r.active !== false && fits(r.id, plant));
   const [recipeId, setRecipeId] = useState(products[0]?.id || '');
   const rec = lk.recipe[recipeId];
   const [d, setD] = useState(today());
@@ -194,10 +210,11 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
   const [split, setSplit] = useState<Record<string, number | ''>>({});
   const [rej, setRej] = useState<number | ''>('');
   const [rejReason, setRejReason] = useState('');
+  const [hmp, setHmp] = useState<{ startTime: string; stopTime: string; mixTemp: number | ''; dgHours: number | ''; lotNo: string; ldo: number | ''; diesel: number | '' }>({ startTime: '', stopTime: '', mixTemp: '', dgHours: '', lotNo: '', ldo: '', diesel: '' });
   const changePlant = (id: string) => {
     setPlantId(id);
     const p = lk.plant[id]!;
-    const first = db.recipes.find((r) => (p.type === 'CRUSHER' ? !!r.split : !r.split && (p.type === 'HOT_MIX' ? ['m30', 'm31'] : ['m32', 'm33', 'm34']).includes(r.productId)));
+    const first = db.recipes.find((r) => r.active !== false && fits(r.id, p));
     setRecipeId(first?.id || '');
     setStart(Math.max(0, ...db.production.filter((x) => x.plantId === id).map((x) => x.stopMeter)));
   };
@@ -207,17 +224,24 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
     return used > availability(db, plant.storeId, t.materialId, d).onDate + 1e-6;
   });
   const rule = entryDateRule(db, d, s.isAdmin);
+  // HMP-01: burner LDO and DG diesel leave the plant store with the mix
+  const fuelLines = [plant.burnerFuelId && hmp.ldo !== '' ? { materialId: plant.burnerFuelId, qty: Number(hmp.ldo) } : null, plant.dgFuelId && hmp.diesel !== '' ? { materialId: plant.dgFuelId, qty: Number(hmp.diesel) } : null].filter(Boolean) as Array<{ materialId: string; qty: number }>;
+  const buildActual = () => {
+    if (isCrusher && rec?.split) return rec.split.map((x) => ({ materialId: x.materialId, qty: split[x.materialId] !== undefined && split[x.materialId] !== '' ? Number(split[x.materialId]) : round((Number(q) * x.pct) / 100, 2) }));
+    const base = override ? theo.map((t) => ({ materialId: t.materialId, qty: actual[t.materialId] !== undefined && actual[t.materialId] !== '' ? Number(actual[t.materialId]) : t.qty })) : fuelLines.length ? theo : [];
+    const all = [...base, ...fuelLines];
+    return all.length ? all : undefined;
+  };
+  const ratios = rec && q && !isCrusher ? productionRatios(db, { plantId, recipeId, qty: Number(q), actual: buildActual() } as any) : null;
   const save = () => {
     if (rule.error) return toast.error(rule.error);
     if (!rec || !q || stop === '' || Number(stop) < Number(start)) return toast.error('Product, quantity and meter readings are required');
     if (shortages.length) return toast.error('Not enough raw material in plant yard', shortages.map((x) => lk.material[x.materialId]?.name).join(', '));
+    const fuelShort = fuelLines.filter((l) => l.qty > availability(db, plant.storeId, l.materialId, d).onDate + 1e-6);
+    if (fuelShort.length) return toast.error('Not enough fuel in plant store', fuelShort.map((x) => lk.material[x.materialId]?.name).join(', '));
     const no = nextNo(isCrusher ? 'CRS' : plant.type === 'HOT_MIX' ? 'HMP' : 'RMC', d);
-    const act = isCrusher
-      ? rec.split!.map((x) => ({ materialId: x.materialId, qty: split[x.materialId] !== undefined && split[x.materialId] !== '' ? Number(split[x.materialId]) : round((Number(q) * x.pct) / 100, 2) }))
-      : override
-        ? theo.map((t) => ({ materialId: t.materialId, qty: actual[t.materialId] !== undefined && actual[t.materialId] !== '' ? Number(actual[t.materialId]) : t.qty }))
-        : undefined;
-    insert('production', { no, date: d, shift, plantId, productId: rec.productId, recipeId, qty: Number(q), runHours: round(Number(stop) - Number(start), 1), startMeter: Number(start), stopMeter: Number(stop), dgUnits: Number(dg) || 0, fuelUsed: Number(fuel) || 0, operator, actual: act, rejectedQty: Number(rej) || 0, rejectReason: rejReason || undefined } as any, `Production ${no}`, 'Production');
+    const act = buildActual();
+    insert('production', { no, date: d, shift, plantId, productId: rec.productId, recipeId, qty: Number(q), runHours: round(Number(stop) - Number(start), 1), startMeter: Number(start), stopMeter: Number(stop), dgUnits: Number(dg) || 0, fuelUsed: plant.type === 'HOT_MIX' && plant.burnerFuelId ? Number(hmp.ldo) || 0 : Number(fuel) || 0, operator, actual: act, rejectedQty: Number(rej) || 0, rejectReason: rejReason || undefined, startTime: hmp.startTime || undefined, stopTime: hmp.stopTime || undefined, mixTemp: hmp.mixTemp === '' ? undefined : Number(hmp.mixTemp), dgHours: hmp.dgHours === '' ? undefined : Number(hmp.dgHours), lotNo: hmp.lotNo || undefined } as any, `Production ${no}`, 'Production');
     toast.success(`${no} saved`, isCrusher ? 'Crusher output added to yard stock' : `${override ? 'Actual' : 'Recipe'} raw material consumed from plant yard`);
     onClose();
   };
@@ -233,9 +257,28 @@ function ProductionForm({ onClose }: { onClose: () => void }) {
           <Field label="Start meter"><NumberInput value={start} onChange={setStart} suffix="h" /></Field>
           <Field label="Stop meter" required hint={stop !== '' ? `${round(Number(stop) - Number(start), 1)} run hours` : undefined}><NumberInput value={stop} onChange={setStop} suffix="h" /></Field>
           <Field label="Power / DG units"><NumberInput value={dg} onChange={setDg} /></Field>
-          <Field label={plant.type === 'HOT_MIX' ? 'Burner fuel (FO)' : 'Fuel used'}><NumberInput value={fuel} onChange={setFuel} suffix="L" /></Field>
+          {!(plant.type === 'HOT_MIX' && plant.burnerFuelId) && <Field label={plant.type === 'HOT_MIX' ? 'Burner fuel (FO)' : 'Fuel used'}><NumberInput value={fuel} onChange={setFuel} suffix="L" /></Field>}
           <Field label="Operator" className="col-span-2"><Input value={operator} onChange={(e) => setOperator(e.target.value)} /></Field>
+          {plant.type === 'HOT_MIX' && (
+            <>
+              <Field label="Start time"><Input type="time" value={hmp.startTime} onChange={(e) => setHmp({ ...hmp, startTime: e.target.value })} /></Field>
+              <Field label="Stop time"><Input type="time" value={hmp.stopTime} onChange={(e) => setHmp({ ...hmp, stopTime: e.target.value })} /></Field>
+              <Field label="Mixing temperature"><NumberInput value={hmp.mixTemp} onChange={(x) => setHmp({ ...hmp, mixTemp: x })} suffix="°C" /></Field>
+              <Field label="Lot no."><Input value={hmp.lotNo} onChange={(e) => setHmp({ ...hmp, lotNo: e.target.value })} /></Field>
+              <Field label="Burner LDO used" hint={plant.burnerFuelId ? 'Taken from plant store' : 'Set the burner fuel material on the plant'}><NumberInput value={hmp.ldo} onChange={(x) => setHmp({ ...hmp, ldo: x })} suffix="L" disabled={!plant.burnerFuelId} /></Field>
+              <Field label="DG hours"><NumberInput value={hmp.dgHours} onChange={(x) => setHmp({ ...hmp, dgHours: x })} suffix="h" /></Field>
+              <Field label="DG diesel used" hint={plant.dgFuelId ? 'Taken from plant store' : 'Set the DG fuel material on the plant'}><NumberInput value={hmp.diesel} onChange={(x) => setHmp({ ...hmp, diesel: x })} suffix="L" disabled={!plant.dgFuelId} /></Field>
+            </>
+          )}
         </div>
+        {ratios && (
+          <div className={cn('rounded-xl px-3 py-2 text-sm flex flex-wrap gap-x-5 gap-y-1', ratios.flags.length ? 'bg-warn-soft text-warn' : 'bg-good-soft text-good')}>
+            <span>Bitumen {ratios.bitPct}%{ratios.jmfPct ? ` (JMF ${ratios.jmfPct}%)` : ''}</span>
+            {ratios.ldo > 0 && <span>LDO {ratios.ldoPerMt} L/MT{plant.ldoPerMtNorm ? ` (norm ${plant.ldoPerMtNorm})` : ''}</span>}
+            {ratios.diesel > 0 && <span>Diesel {ratios.dieselPerMt} L/MT{plant.dieselPerMtNorm ? ` (norm ${plant.dieselPerMtNorm})` : ''}</span>}
+            {ratios.flags.length > 0 && <b>Check: {ratios.flags.join('; ')}</b>}
+          </div>
+        )}
         <DateRuleNote date={d} />
         {isCrusher && rec?.split ? (
           <Section title="Output split by size — yield & loss tracked">
@@ -343,13 +386,18 @@ function DispatchForm({ onClose }: { onClose: () => void }) {
   const db = useDB();
   const lk = lookup(db);
   const plants = usePlants();
-  const [plantId, setPlantId] = useState(plants[0]?.id || 'p1');
-  const plant = lk.plant[plantId]!;
-  const products = db.materials.filter((m) => (plant.type === 'HOT_MIX' ? ['m30', 'm31'] : plant.type === 'BATCHING' ? ['m32', 'm33', 'm34'] : ['m06', 'm07', 'm08', 'm09']).includes(m.id));
+  const [plantId, setPlantId] = useState(plants[0]?.id || '');
+  const plant = (lk.plant[plantId] || { type: 'HOT_MIX', storeId: '', name: '' }) as PlantT;
+  // products this plant makes: outputs of its production, else outputs of recipes that fit its type
+  const made = new Set(db.production.filter((p) => p.plantId === plantId).flatMap((p) => (lk.recipe[p.recipeId]?.split ? lk.recipe[p.recipeId]!.split!.map((x) => x.materialId) : [p.productId])));
+  const products = db.materials.filter((m) => made.has(m.id) || (m.kind === 'OUTPUT' && db.recipes.some((r) => r.productId === m.id && !r.split && (plant.type === 'HOT_MIX' ? r.lines.some((l) => lk.material[l.materialId]?.category === 'Bitumen') : plant.type === 'BATCHING' ? r.lines.some((l) => lk.material[l.materialId]?.category === 'Cement') : false))));
   const [productId, setProductId] = useState(products[0]?.id || '');
   const [toKind, setToKind] = useState<'site' | 'sale'>('site');
-  const [site, setSite] = useState('s1');
-  const [customer, setCustomer] = useState('');
+  const [site, setSite] = useState(db.sites.find((x) => x.status === 'ACTIVE' && !(x as any).outOfScope)?.id || '');
+  const [customer] = useState('');
+  const [buyerId, setBuyerId] = useState('');
+  const [gross, setGross] = useState<number | ''>('');
+  const [tare, setTare] = useState<number | ''>('');
   const [saleRate, setSaleRate] = useState<number | ''>('');
   const [q, setQ] = useState<number | ''>('');
   const [veh, setVeh] = useState('');
@@ -360,11 +408,14 @@ function DispatchForm({ onClose }: { onClose: () => void }) {
   const [d] = useState(today());
   const stock = availability(db, plant.storeId, productId, d).onDate;
   const rec = db.recipes.find((r) => r.productId === productId && r.siteId === site) || db.recipes.find((r) => r.productId === productId && !r.siteId && !r.split);
+  const weighed = gross !== '' && tare !== '' ? round(Number(gross) - Number(tare), 3) : null;
   const save = () => {
-    if (!q || !veh || (toKind === 'site' ? !site : !customer)) return toast.error('Quantity, vehicle and destination are required');
+    if (weighed !== null && weighed <= 0) return toast.error('Gross weight must be more than tare');
+    if ((!q && weighed === null) || !veh || (toKind === 'site' ? !site : !buyerId && !customer)) return toast.error('Quantity, vehicle and destination are required');
     if (Number(q) > stock + 1e-6) return toast.error('More than produced stock in plant yard', `${qty(stock, lk.material[productId]?.unit)} available`);
     const no = nextNo(plant.type === 'HOT_MIX' ? 'DSP-H' : plant.type === 'BATCHING' ? 'DSP-R' : 'DSP-C', d);
-    insert('dispatches', { no, date: d, time: new Date().toTimeString().slice(0, 5), plantId, productId, qty: Number(q), vehicleId: veh, driver: lk.vehicle[veh]?.driver, siteId: toKind === 'site' ? site : undefined, customer: toKind === 'sale' ? customer : undefined, saleRate: toKind === 'sale' ? Number(saleRate) : undefined, boqItemId: boq || undefined, chainage: chain, temperature: temp === '' ? undefined : Number(temp), weighbridgeSlip: wb, status: toKind === 'sale' ? 'RECEIVED' : 'DISPATCHED', receivedQty: toKind === 'sale' ? Number(q) : undefined } as any, `Dispatch ${no}`, 'Dispatch');
+    const buyer = lk.client[buyerId];
+    insert('dispatches', { no, date: d, time: new Date().toTimeString().slice(0, 5), plantId, productId, qty: weighed ?? Number(q), gross: gross === '' ? undefined : Number(gross), tare: tare === '' ? undefined : Number(tare), buyerId: toKind === 'sale' && buyerId ? buyerId : undefined, vehicleId: veh, driver: lk.vehicle[veh]?.driver, siteId: toKind === 'site' ? site : undefined, customer: toKind === 'sale' ? buyer?.name || customer : undefined, saleRate: toKind === 'sale' ? Number(saleRate) : undefined, boqItemId: boq || undefined, chainage: chain, temperature: temp === '' ? undefined : Number(temp), weighbridgeSlip: wb, status: toKind === 'sale' ? 'RECEIVED' : 'DISPATCHED', receivedQty: toKind === 'sale' ? weighed ?? Number(q) : undefined } as any, `Dispatch ${no}`, 'Dispatch');
     toast.success(`${no} issued`, toKind === 'site' ? 'Site must confirm receipt' : 'Sale invoice with GST posted to customer ledger');
     onClose();
   };
@@ -374,8 +425,12 @@ function DispatchForm({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-2 gap-4">
           <Field label="Plant"><Select value={plantId} onChange={(v) => (setPlantId(v), setProductId(''))} options={plants.map((p) => ({ value: p.id, label: p.name }))} /></Field>
           <Field label="Product" hint={productId ? `${qty(stock, lk.material[productId]?.unit)} in yard` : undefined}><Select value={productId} onChange={setProductId} placeholder="Choose" options={products.map((m) => ({ value: m.id, label: m.name }))} /></Field>
-          <Field label="Quantity" required><NumberInput value={q} onChange={setQ} suffix={lk.material[productId]?.unit} /></Field>
+          <Field label="Quantity" required hint={weighed !== null ? `From weighbridge: ${qty(weighed)}` : undefined}><NumberInput value={weighed ?? q} onChange={setQ} disabled={weighed !== null} suffix={lk.material[productId]?.unit} /></Field>
           <Field label="Vehicle" required><Combo value={veh} onChange={setVeh} options={db.vehicles.filter((v) => ['Tipper', 'Transit Mixer'].includes(v.type)).map((v) => ({ value: v.id, label: vehicleLabel(v), hint: v.driver }))} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Weighbridge gross"><NumberInput value={gross} onChange={setGross} suffix="MT" /></Field>
+          <Field label="Tare"><NumberInput value={tare} onChange={setTare} suffix="MT" /></Field>
         </div>
         <Segmented value={toKind} onChange={setToKind} options={[{ value: 'site', label: 'To own site' }, { value: 'sale', label: 'Sale to outside party' }]} />
         {toKind === 'site' ? (
@@ -388,7 +443,7 @@ function DispatchForm({ onClose }: { onClose: () => void }) {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Customer" required className="col-span-2"><Input value={customer} onChange={(e) => setCustomer(e.target.value)} /></Field>
+            <Field label="Buyer" required className="col-span-2" hint="Add buyers in Masters → Clients; the tax invoice is made from delivered loads in Outside sales"><Combo value={buyerId} onChange={setBuyerId} options={db.clients.filter((c) => c.active !== false).map((c) => ({ value: c.id, label: c.name, hint: c.gstin || 'unregistered' }))} /></Field>
             <Field label="Sale rate (excl. GST)"><NumberInput value={saleRate} onChange={setSaleRate} prefix="₹" /></Field>
             <Field label="GST"><Input disabled value={`${lk.material[productId]?.gstPct ?? 18}%`} /></Field>
           </div>
@@ -435,7 +490,7 @@ function RawTab() {
           { key: 'opening', header: 'Opening', align: 'right', value: (r) => round(r.opening, 2), cell: (r) => qty(r.opening) },
           { key: 'received', header: 'Received', align: 'right', value: (r) => round(r.received, 2), cell: (r) => <span className="text-good">{r.received ? `+${qty(r.received)}` : '—'}</span> },
           { key: 'consumed', header: 'Used in production', align: 'right', value: (r) => round(r.consumed, 2), cell: (r) => (r.consumed ? qty(r.consumed) : '—') },
-          { key: 'out', header: 'Dispatched / out', align: 'right', value: (r) => round(r.transferred, 2), cell: (r) => (r.transferred ? qty(r.transferred) : '—') },
+          { key: 'out', header: 'Dispatched / out', align: 'right', value: (r) => round(r.transferred + r.sold, 2), cell: (r) => (r.transferred + r.sold ? qty(r.transferred + r.sold) : '—') },
           { key: 'wasted', header: 'Wastage', align: 'right', value: (r) => round(r.wasted, 2), cell: (r) => (r.wasted ? qty(r.wasted) : '—'), hideMobile: true },
           { key: 'closing', header: 'Closing', align: 'right', value: (r) => round(r.closing, 2), cell: (r) => <b>{qty(r.closing, n.unit(r.materialId))}</b> },
           { key: 'value', header: 'Value', align: 'right', rate: true, value: (r) => Math.round(r.closingValue), cell: (r) => inr(r.closingValue) },
@@ -542,6 +597,7 @@ function CostTab() {
       <Callout>
         Plant cost per unit = (raw material + plant fuel + power + plant labour + machinery + maintenance + overhead) ÷ quantity produced. Each site is charged qty received × plant cost per unit, or a fixed internal rate if selected.
       </Callout>
+      <CostByMix />
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {plants.map((p) => (
           <Card key={p.id} className="p-4">

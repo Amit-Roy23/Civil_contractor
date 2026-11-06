@@ -24,6 +24,7 @@ export type MvKind =
   | 'Production in'
   | 'Production use'
   | 'Dispatch'
+  | 'Sale'
   | 'Spares to vehicle';
 
 export interface Movement {
@@ -82,11 +83,14 @@ export function productionUse(db: DB, p: Production): Array<{ materialId: ID; qt
   const plant = db.plants.find((x) => x.id === p.plantId);
   if (!rec) return [];
   if (plant?.type === 'CRUSHER') return [{ materialId: rec.productId, qty: p.qty, theoretical: p.qty }];
-  return rec.lines.map((l) => {
+  const lines = rec.lines.map((l) => {
     const theoretical = round(l.qty * p.qty, 3);
     const act = p.actual?.find((a) => a.materialId === l.materialId);
     return { materialId: l.materialId, qty: act ? act.qty : theoretical, theoretical };
   });
+  // HMP-01: burner LDO, DG diesel and anything else entered for the shift also leave the plant store
+  for (const a of p.actual || []) if (!rec.lines.some((l) => l.materialId === a.materialId) && a.qty > 0) lines.push({ materialId: a.materialId, qty: a.qty, theoretical: 0 });
+  return lines;
 }
 
 /** product output(s) of a production entry */
@@ -173,6 +177,12 @@ function buildMovements(db: DB, unitCost: (plantId: ID, productId: ID, month: st
         out.push(mk({ date: (d.receivedAt || d.date).slice(0, 10), storeId: toStore, materialId: d.productId, qty: d.receivedQty, rate, kind: 'Plant receipt', ref: d.no, refId: d.id, plantId: d.plantId, counterStoreId: from, phase: 0 }));
       }
     }
+  }
+
+  // sale of goods from a store: out at average cost on the invoice date (a cancelled invoice puts it back)
+  for (const inv of db.salesInvoices || []) {
+    if (inv.kind !== 'GOODS' || inv.status === 'CANCELLED' || !inv.storeId) continue;
+    for (const l of inv.lines) out.push(mk({ date: inv.date, storeId: inv.storeId, materialId: l.productId, qty: -l.qty, kind: 'Sale', ref: inv.no, refId: inv.id, phase: 2 }));
   }
 
   out.sort((a, b) => (a.date === b.date ? a.phase - b.phase : a.date < b.date ? -1 : 1));

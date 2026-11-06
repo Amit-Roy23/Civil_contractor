@@ -908,6 +908,7 @@ export function buildSeed(T: string): DB {
     ...M,
     stockTxns, requisitions, quotations, pos, invoices, payments, debitNotes, attendance, advances, wageRuns, workOrders, subconBills, imprests, expenses, overheads,
     fuelPurchases, fuelIssues, dips, logs, jobCards, tyres, production, dispatches, plantCosts, stockpiles, measurements, raBills,
+    guarantees: [], bankFacilities: [], taxCredits: [], tankDips: [], salesInvoices: [], labTests: [], safety: [], siteRegisters: [], dprs: [], hireOuts: [], loans: [], subsidyClaims: [],
     audit, notifications: [], seq,
   };
 }

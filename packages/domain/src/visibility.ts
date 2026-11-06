@@ -64,6 +64,24 @@ export function recordInScope(db: DB, s: Session, coll: CollectionKey, r: any): 
     case 'payments':
     case 'debitNotes':
     case 'overheads':
+    case 'bankFacilities':
+    case 'taxCredits':
+      return s.allSites && s.showRates;
+    case 'guarantees':
+      return s.showRates && (r.siteId ? site(r.siteId) : s.allSites);
+    case 'tankDips':
+      return store(r.storeId);
+    case 'salesInvoices':
+      return s.showRates && (r.kind === 'GOODS' ? store(r.storeId) : plant(r.plantId));
+    case 'labTests':
+      return r.plantId ? plant(r.plantId) : site(r.siteId);
+    case 'safety':
+    case 'siteRegisters':
+    case 'dprs':
+      return site(r.siteId);
+    case 'hireOuts':
+    case 'loans':
+    case 'subsidyClaims':
       return s.allSites && s.showRates;
     case 'notifications':
       return !r.userId || r.userId === s.user.id;
@@ -107,7 +125,7 @@ const MASK: Partial<Record<CollectionKey, (r: any) => any>> = {
   subconBills: (r) => ({ ...r, lines: zeroLines(r.lines, ['rate']), materialRecovery: 0, advanceRecovery: 0, penalty: 0 }),
   raBills: (r) => ({ ...r, lines: zeroLines(r.lines, ['rate']), deductions: Object.fromEntries(Object.keys(r.deductions).map((k) => [k, 0])), receipts: zeroLines(r.receipts, ['amount']), escalation: undefined }),
   wageRuns: (r) => ({ ...r, lines: zeroLines(r.lines, ['gross', 'advance', 'deduction', 'net']) }),
-  plantCosts: (r) => ({ ...r, labour: 0, power: 0, machinery: 0, maintenance: 0, overhead: 0 }),
+  plantCosts: (r) => ({ ...r, labour: 0, power: 0, machinery: 0, maintenance: 0, overhead: 0, depreciation: 0, interest: 0 }),
 };
 
 /** how one record looks to this user — undefined when it is out of their scope */
