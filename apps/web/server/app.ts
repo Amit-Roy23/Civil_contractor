@@ -53,6 +53,7 @@ export async function handle(req: Req): Promise<Res> {
     }
     if (m === 'POST' && r === '/auth/demo') throw new HttpError(403, 'There is no demo on this server');
     if (m === 'POST' && r === '/setup') return ok(await setup(req));
+    if (m === 'POST' && r === '/setup/reset-owner') return ok(await resetOwner(req));
     if (r === '/cron/daily') return ok(await cronDaily(req));
 
     /* ---------- signed in ---------- */
@@ -132,6 +133,10 @@ async function config() {
     demo: null,
     needsCompany: real.length > 1 && !process.env.DEFAULT_COMPANY,
     testCopies: list.some((c) => c.is_test),
+    // OTP sign-in and two-factor need an SMS provider
+    sms: !!(process.env.MSG91_AUTH_KEY && process.env.MSG91_OTP_TEMPLATE_ID),
+    // the admin can set a new password with the set-up key
+    recovery: (process.env.SETUP_KEY || '').length >= 12,
     // first visit: no company yet — the login page offers the one-time set-up
     setup: real.length === 0 ? { templates: Object.entries(TEMPLATES).map(([id, t]) => ({ id, label: t.label })), keyConfigured: (process.env.SETUP_KEY || '').length >= 12 } : null,
   };
@@ -171,6 +176,30 @@ async function setup(req: Req) {
   await store.replaceAll(code, db.company.name, db);
   await store.setPassword(code, db.users[0]!.id, await auth.hashPassword(password));
   return { ok: true, company: code, username: db.users[0]!.username, name: db.company.name };
+}
+
+/* ---------- admin forgot the password: a new one with the set-up key ---------- */
+async function resetOwner(req: Req) {
+  await store.rateLimit(`reset:${req.ip}`, 5, 15 * 60_000);
+  const key = process.env.SETUP_KEY || '';
+  if (key.length < 12) throw new HttpError(403, 'Password recovery is off: set SETUP_KEY (12+ characters) in the hosting settings and redeploy');
+  const given = Buffer.from(str(req.body?.setupKey, 200));
+  const want = Buffer.from(key);
+  if (given.length !== want.length || !timingSafeEqual(given, want)) throw new HttpError(403, 'Wrong set-up key');
+  const pw = str(req.body?.newPassword, 200);
+  if (pw.length < 8) throw new HttpError(400, 'New password: at least 8 characters');
+  const company = await auth.resolveCompany(str(req.body?.company, 64));
+  const { db } = await store.load(company.id);
+  const user = auth.findUser(db, str(req.body?.username, 100));
+  // only an Admin (owner role) is recovered this way; everyone else is reset by the Admin
+  if (!user || user.roleId !== 'owner') throw new HttpError(404, 'No Admin with this username — other users ask the Admin to reset their password');
+  await store.setPassword(company.id, user.id, await auth.hashPassword(pw));
+  const { now } = clock();
+  await store.write(company.id, (d) => {
+    const a: AuditEntry = { id: newId('au'), at: now, userId: user.id, action: 'UPDATE', entity: 'User', entityId: user.id, label: `${user.name}: Admin password reset with the set-up key` };
+    return { db: { ...d, audit: [...d.audit, a] }, changes: [{ coll: 'audit', id: a.id, rec: a }] };
+  });
+  return { ok: true, username: user.username, company: company.id };
 }
 
 /* ---------- daily backup, called by Vercel Cron ---------- */

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CircleCheck, DatabaseBackup, Eye, EyeOff, Lock, ShieldCheck, UserPlus } from 'lucide-react';
 import { useDB, insert, update, updateSettings, journalSize } from '../../data/store';
 import { API_MODE, api } from '../../data/api';
@@ -41,7 +41,7 @@ function UsersTab() {
         onRowClick={setEdit}
         toolbar={<Button variant="primary" icon={<UserPlus className="w-4 h-4" />} onClick={() => setEdit({ name: '', username: '', phone: '', email: '', roleId: 'engineer', siteIds: [], plantIds: [], active: true })}>Add user</Button>}
         columns={[
-          { key: 'name', header: 'User', primary: true, value: (r) => r.name, cell: (r) => <div className="flex items-center gap-2.5"><span className="w-8 h-8 rounded-lg bg-surface-3 text-[11px] font-bold flex items-center justify-center">{initials(r.name)}</span><div><div className="font-medium">{r.name}</div><div className="text-[11px] text-muted">@{r.username} · {r.phone}</div></div></div> },
+          { key: 'name', header: 'User', primary: true, value: (r) => r.name, cell: (r) => <div className="flex items-center gap-2.5"><span className="w-8 h-8 rounded-lg bg-surface-3 text-[11px] font-bold flex items-center justify-center">{initials(r.name)}</span><div><div className="font-medium">{r.name}</div><div className="text-[11px] text-muted">@{r.username}{r.phone ? ` · ${r.phone}` : ''}</div></div></div> },
           { key: 'role', header: 'Role', value: (r) => db.roles.find((x) => x.id === r.roleId)?.name, cell: (r) => <Badge tone="info">{db.roles.find((x) => x.id === r.roleId)?.name}</Badge> },
           { key: 'scope', header: 'Access to', value: (r) => (r.siteIds.length ? r.siteIds.map((s) => n.site(s)).join(', ') : r.plantIds.length ? r.plantIds.map((p) => n.lk.plant[p]?.name).join(', ') : 'All sites'), cell: (r) => <span className="text-[13px]">{r.siteIds.length ? r.siteIds.map((s) => n.site(s)).join(', ') : r.plantIds.length ? `Plants: ${r.plantIds.map((p) => n.lk.plant[p]?.name).join(', ')}` : db.roles.find((x) => x.id === r.roleId)?.allSites ? 'All sites' : 'Central store'}</span> },
           { key: '2fa', header: '2FA', value: (r) => (r.twoFactor ? 'On' : 'Off'), cell: (r) => (r.twoFactor ? <Badge tone="good">On</Badge> : <span className="text-muted text-xs">Off</span>), hideMobile: true },
@@ -53,14 +53,31 @@ function UsersTab() {
   );
 }
 
+/** a password that is easy to read out on the phone: no 0/O, 1/l/I */
+function makePassword() {
+  const a = 'abcdefghjkmnpqrstuvwxyz', A = 'ABCDEFGHJKMNPQRSTUVWXYZ', d = '23456789';
+  const pick = (s: string) => s[crypto.getRandomValues(new Uint32Array(1))[0]! % s.length];
+  return `${pick(A)}${Array.from({ length: 5 }, () => pick(a)).join('')}@${Array.from({ length: 4 }, () => pick(d)).join('')}`;
+}
+
 function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void }) {
   const db = useDB();
+  const s = useSession();
   const [v, setV] = useState<Partial<User>>({ ...user });
   const [password, setPassword] = useState('');
+  const [show, setShow] = useState(false);
+  const [sms, setSms] = useState(!API_MODE);
+  useEffect(() => {
+    if (API_MODE) api.config().then((c) => setSms(!!c.sms), () => undefined);
+  }, []);
+  const self = user.id === s.user.id;
   const role = db.roles.find((r) => r.id === v.roleId);
   const toggle = (k: 'siteIds' | 'plantIds', id: string) => setV({ ...v, [k]: (v[k] || []).includes(id) ? (v[k] || []).filter((x) => x !== id) : [...(v[k] || []), id] });
   const save = () => {
-    if (!v.name || !v.username || !v.phone) return toast.error('Name, username and mobile are required');
+    if (!v.name?.trim() || !v.username?.trim()) return toast.error('Name and username are required');
+    if (!/^[a-z0-9._-]{3,40}$/.test(v.username)) return toast.error('Username: 3–40 small letters, digits, . _ - (no spaces)');
+    if (db.users.some((u) => u.id !== user.id && u.username.toLowerCase() === v.username!.toLowerCase())) return toast.error('This username is already taken');
+    if (v.phone && v.phone.replace(/\D/g, '').length < 10) return toast.error('Mobile number looks short — 10 digits');
     if (API_MODE && (password || !user.id) && password.length < 8) return toast.error('Password must be at least 8 characters');
     if (user.id) {
       update('users', user.id, v as any, `User ${v.name} updated`, 'User');
@@ -74,15 +91,19 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
       <div className="space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Full name" required><Input value={v.name || ''} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
-          <Field label="Username" required><Input value={v.username || ''} onChange={(e) => setV({ ...v, username: e.target.value })} /></Field>
-          <Field label="Mobile (OTP login)" required><Input value={v.phone || ''} onChange={(e) => setV({ ...v, phone: e.target.value })} /></Field>
+          <Field label="Username" required hint="What they type to sign in — small letters, no spaces"><Input value={v.username || ''} autoCapitalize="none" onChange={(e) => setV({ ...v, username: e.target.value.toLowerCase().replace(/\s+/g, '') })} /></Field>
+          <Field label="Mobile" hint={sms ? 'Also used for OTP sign-in' : 'Optional'}><Input inputMode="tel" value={v.phone || ''} onChange={(e) => setV({ ...v, phone: e.target.value })} /></Field>
           <Field label="Email"><Input value={v.email || ''} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
           {API_MODE && (
             <Field label={user.id ? 'New password' : 'Password'} required={!user.id} hint={user.id ? 'Leave blank to keep the current password' : 'At least 8 characters — share it with the user'}>
-              <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <div className="flex gap-2">
+                <Input type={show ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} className="flex-1" />
+                <Button type="button" onClick={() => (setPassword(makePassword()), setShow(true))}>Generate</Button>
+                <Button type="button" variant="ghost" onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</Button>
+              </div>
             </Field>
           )}
-          <Field label="Role"><Select value={v.roleId || ''} onChange={(x) => setV({ ...v, roleId: x })} options={db.roles.map((r) => ({ value: r.id, label: r.name }))} /></Field>
+          <Field label="Role" hint={self ? 'You cannot change your own role' : 'What they can see and do — set in Roles & permissions'}><Select value={v.roleId || ''} disabled={self} onChange={(x) => setV({ ...v, roleId: x })} options={db.roles.map((r) => ({ value: r.id, label: r.name }))} /></Field>
         </div>
         {!role?.allSites && (
           <Section title="Sites this user can see">
@@ -103,8 +124,8 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
           </Section>
         )}
         <div className="space-y-3">
-          <Toggle checked={!!v.twoFactor} onChange={(x) => setV({ ...v, twoFactor: x })} label="Two-factor authentication" hint="Recommended for Admin" />
-          <Toggle checked={v.active !== false} onChange={(x) => setV({ ...v, active: x })} label="Active" hint="Disabled users cannot sign in" />
+          {sms ? <Toggle checked={!!v.twoFactor} onChange={(x) => setV({ ...v, twoFactor: x })} label="Two-factor authentication" hint="An SMS code after the password — recommended for Admin" /> : v.twoFactor ? <Callout tone="warn">Two-factor is on but SMS is not set up on the server — this user cannot sign in. <button className="underline" onClick={() => setV({ ...v, twoFactor: false })}>Turn it off</button></Callout> : null}
+          {!self && <Toggle checked={v.active !== false} onChange={(x) => setV({ ...v, active: x })} label="Active" hint="Disabled users cannot sign in; their entries stay" />}
         </div>
       </div>
     </Drawer>
@@ -134,15 +155,39 @@ function RolesTab() {
     toast.success('Role saved', 'Takes effect immediately for every user in this role');
   };
   const locked = role.id === 'owner';
+  // a new role (e.g. Manager, Supervisor) starts as a copy of an existing one, then its ticks are adjusted
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [copyFrom, setCopyFrom] = useState('engineer');
+  const addRole = () => {
+    const name = newName.trim();
+    if (!name) return toast.error('Give the role a name, e.g. Manager');
+    if (db.roles.some((r) => r.name.toLowerCase() === name.toLowerCase())) return toast.error('A role with this name already exists');
+    const base = db.roles.find((r) => r.id === copyFrom)!;
+    const rec = insert('roles', { name, description: `Copied from ${base.name}`, perms: JSON.parse(JSON.stringify(base.perms)), ratesVisible: base.ratesVisible, allSites: base.allSites, approvalLimit: Number.isFinite(base.approvalLimit) ? base.approvalLimit : 0 } as any, `Role ${name} created`, 'Role');
+    setAdding(false);
+    setNewName('');
+    setRoleId(rec.id);
+    setDraft(rec as unknown as Role);
+    toast.success(`Role ${name} created`, 'Tick what this role may see and do, then Save');
+  };
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 items-center">
         {db.roles.map((r) => (
           <button key={r.id} onClick={() => pick(r.id)} className={cn('px-3.5 h-10 rounded-xl border text-sm font-medium transition-all', roleId === r.id ? 'bg-fg text-bg border-fg' : 'bg-surface border-line text-fg-2 hover:border-line-strong')}>
             {r.name}
           </button>
         ))}
+        {s.can('admin', 'add') && !adding && <Button icon={<UserPlus className="w-4 h-4" />} onClick={() => setAdding(true)}>New role</Button>}
       </div>
+      {adding && (
+        <Card className="p-4 flex flex-col sm:flex-row gap-3 sm:items-end">
+          <Field label="Role name" className="flex-1"><Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Manager" /></Field>
+          <Field label="Start with the permissions of" className="sm:w-64"><Select value={copyFrom} onChange={setCopyFrom} options={db.roles.filter((r) => r.id !== 'owner').map((r) => ({ value: r.id, label: r.name }))} /></Field>
+          <div className="flex gap-2"><Button onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" onClick={addRole}>Create role</Button></div>
+        </Card>
+      )}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2 overflow-hidden">
           <CardHeader title={`${role.name} — permissions`} subtitle="per module: view, add, edit, delete, approve" />

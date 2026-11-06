@@ -6,7 +6,7 @@ import { Button, toast } from '../components/ui/core';
 import { Field, Input, Segmented } from '../components/ui/fields';
 import { cn, initials } from '../lib/utils';
 import { navigate } from '../lib/router';
-import { SetupCard } from './Setup';
+import { RecoverCard, SetupCard } from './Setup';
 
 const ROLE_META: Record<string, { icon: any; tint: string; blurb: string }> = {
   owner: { icon: Landmark, tint: 'from-amber-400 to-orange-600', blurb: 'Dashboards, approvals, profitability' },
@@ -31,6 +31,7 @@ export default function Login() {
   });
   const [cfg, setCfg] = useState<LoginConfig | null>(null);
   const [askCompany, setAskCompany] = useState(false);
+  const [recover, setRecover] = useState(false);
   const [ticket, setTicket] = useState('');
   const [otpHint, setOtpHint] = useState(API_MODE ? '' : 'Demo OTP: 123456');
   const [phone, setPhone] = useState('');
@@ -185,6 +186,18 @@ export default function Login() {
                 api.config().then(setCfg, (e) => setErr(e.message));
               }}
             />
+          ) : recover ? (
+            <RecoverCard
+              company={company.trim() || undefined}
+              onCancel={() => (setRecover(false), setErr(''))}
+              onDone={(u) => {
+                setRecover(false);
+                setUsername(u);
+                setPassword('');
+                setMode('password');
+                toast.success('Password changed', `Sign in as ${u} with the new password`);
+              }}
+            />
           ) : twoFa ? (
             <div className="bg-surface border border-line rounded-3xl shadow-card p-6 sm:p-8">
               <h2 className="text-xl font-bold">Two-factor verification</h2>
@@ -204,8 +217,8 @@ export default function Login() {
           ) : (
             <div className="bg-surface border border-line rounded-3xl shadow-card p-6 sm:p-8">
               <h2 className="text-xl font-bold">Sign in</h2>
-              <p className="text-sm text-fg-2 mt-1">Use your username and password, or your mobile number with an OTP.</p>
-              <Segmented
+              <p className="text-sm text-fg-2 mt-1">{API_MODE && cfg && !cfg.sms ? 'Use the username and password your Admin gave you.' : 'Use your username and password, or your mobile number with an OTP.'}</p>
+              {!(API_MODE && cfg && !cfg.sms) && <Segmented
                 className="mt-5 w-full flex"
                 value={mode}
                 onChange={(m) => (setMode(m), setErr(''))}
@@ -213,7 +226,7 @@ export default function Login() {
                   { value: 'password', label: 'Username' },
                   { value: 'otp', label: 'Mobile OTP' },
                 ]}
-              />
+              />}
               <form
                 className="mt-5 space-y-4"
                 onSubmit={(e) => {
@@ -254,6 +267,19 @@ export default function Login() {
                 <Button type="submit" variant="primary" size="lg" className="w-full justify-center" loading={busy} icon={mode === 'otp' ? <Smartphone className="w-4 h-4" /> : <KeyRound className="w-4 h-4" />}>
                   {mode === 'otp' && !otpSent ? 'Send OTP' : 'Sign in'}
                 </Button>
+                {API_MODE && mode === 'password' && (
+                  <p className="text-xs text-muted text-center">
+                    Forgot your password? Ask your Admin to set a new one.
+                    {cfg?.recovery && (
+                      <>
+                        {' '}
+                        <button type="button" className="text-brand-strong hover:underline font-medium" onClick={() => (setRecover(true), setErr(''))}>
+                          I am the Admin
+                        </button>
+                      </>
+                    )}
+                  </p>
+                )}
               </form>
             </div>
           )}
