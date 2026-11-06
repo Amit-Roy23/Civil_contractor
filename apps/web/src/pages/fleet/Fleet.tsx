@@ -203,7 +203,7 @@ function FuelForm({ onClose }: { onClose: () => void }) {
     setVid(id);
     const x = lk.vehicle[id]!;
     setSite(x.siteId || db.sites.find((y) => s.seesSite(y.id) && y.status === 'ACTIVE')?.id || '');
-    setSrc(db.fuelSources.find((f) => f.siteId === x.siteId)?.id || 'fs1');
+    setSrc(db.fuelSources.find((f) => f.siteId === x.siteId)?.id || db.fuelSources[0]?.id || '');
     setReading('');
   };
   const warn = v && reading !== '' ? validateMeter(db, vid, Number(reading), d) : null;
@@ -248,9 +248,15 @@ function FuelForm({ onClose }: { onClose: () => void }) {
 /* ================= Tanks & bowsers ================= */
 function TanksTab() {
   const db = useDB();
+  if (!db.fuelSources.some((f) => f.type !== 'OUTSIDE_PUMP')) return <Callout>No own diesel tank or bowser yet. Add one in Masters › Fuel sources to keep its stock and dips here.</Callout>;
+  return <TanksTabBody />;
+}
+
+function TanksTabBody() {
+  const db = useDB();
   const s = useSession();
   const tanks = db.fuelSources.filter((f) => f.type !== 'OUTSIDE_PUMP');
-  const [src, setSrc] = useState(tanks[0]!.id);
+  const [src, setSrc] = useState(tanks[0]?.id || '');
   const [buy, setBuy] = useState(false);
   const [dip, setDip] = useState(false);
   const rows = useMemo(() => fuelTankLedger(db, src).slice().reverse(), [db, src]);
@@ -320,7 +326,7 @@ function TanksTab() {
           { key: 'var', header: 'Variance', align: 'right', value: (r) => r.variance ?? '', cell: (r) => (r.variance !== undefined ? <span className={Math.abs(r.variance) > r.balance * 0.02 ? 'text-bad font-semibold' : 'text-muted'}>{r.variance > 0 ? '+' : ''}{num(r.variance, 1)}</span> : '') },
         ]}
       />
-      <Drawer open={buy} onClose={() => setBuy(false)} title="Fuel purchase into tank" subtitle="supplier, litres, rate, invoice, dip before / after" footer={<><Button onClick={() => setBuy(false)}>Cancel</Button><Button variant="primary" onClick={() => { if (!litres) return toast.error('Litres required'); insert('fuelPurchases', { no: nextNo('FPR'), date: today(), sourceId: src, supplierId: 'sp14', litres: Number(litres), rate: Number(rate), invoiceNo: inv, dipBefore: Math.round(bal), dipAfter: Math.round(bal + Number(litres)) } as any, `Fuel purchase ${litres} L into ${tank.code}`, 'Fuel purchase'); setBuy(false); toast.success('Purchase recorded'); }}>Save</Button></>}>
+      <Drawer open={buy} onClose={() => setBuy(false)} title="Fuel purchase into tank" subtitle="supplier, litres, rate, invoice, dip before / after" footer={<><Button onClick={() => setBuy(false)}>Cancel</Button><Button variant="primary" onClick={() => { if (!litres) return toast.error('Litres required'); insert('fuelPurchases', { no: nextNo('FPR'), date: today(), sourceId: src, supplierId: tank.supplierId || db.suppliers.find((x) => x.kind === 'FUEL_PUMP')?.id || db.suppliers[0]?.id || '', litres: Number(litres), rate: Number(rate), invoiceNo: inv, dipBefore: Math.round(bal), dipAfter: Math.round(bal + Number(litres)) } as any, `Fuel purchase ${litres} L into ${tank.code}`, 'Fuel purchase'); setBuy(false); toast.success('Purchase recorded'); }}>Save</Button></>}>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Litres" required><NumberInput value={litres} onChange={setLitres} suffix="L" /></Field>
           <Field label="Rate"><NumberInput value={rate} onChange={setRate} prefix="₹" /></Field>
@@ -394,7 +400,7 @@ function LogForm({ onClose }: { onClose: () => void }) {
   const pick = (id: string) => {
     setVid(id);
     const x = lk.vehicle[id]!;
-    setSite(x.siteId || 's1');
+    setSite(x.siteId || db.sites.find((y) => s.seesSite(y.id) && y.status === 'ACTIVE')?.id || '');
     const m = vehicleMeter(db, id);
     setOpen(round(m, 1));
     setClose('');

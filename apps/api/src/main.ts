@@ -16,6 +16,11 @@ async function bootstrap() {
   validateEnv(process.env);
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
+  // behind the reverse proxy (Caddy): take the visitor's IP from X-Forwarded-For, so login
+  // rate limits apply per person and not to everyone at once. Only private-network proxies are trusted.
+  app.set('trust proxy', process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal');
+  app.disable('x-powered-by');
+  app.enableShutdownHooks();
   // Excel imports, logos and signature images are larger than the 100 KB default
   app.useBodyParser('json', { limit: process.env.BODY_LIMIT || '10mb' });
 
@@ -40,7 +45,8 @@ async function bootstrap() {
     exclude: ['/', 'health'],
   });
 
-  // 6. OpenAPI / Swagger Documentation at /api/docs
+  // 6. OpenAPI / Swagger Documentation at /api/docs — off in production unless API_DOCS=on
+  const docsOn = process.env.NODE_ENV !== 'production' || process.env.API_DOCS === 'on';
   const config = new DocumentBuilder()
     .setTitle('Civil Contractor Works ERP API')
     .setDescription(
@@ -50,13 +56,12 @@ async function bootstrap() {
     .addBearerAuth()
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  if (docsOn) SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
 
   const port = process.env.PORT || 3000;
   await app.listen(port);
   logger.log(`🚀 Civil Contractor ERP API running on http://localhost:${port}/api`);
-  logger.log(`📖 OpenAPI documentation available at http://localhost:${port}/api/docs`);
+  if (docsOn) logger.log(`📖 OpenAPI documentation available at http://localhost:${port}/api/docs`);
 }
 
 bootstrap();

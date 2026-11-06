@@ -43,6 +43,8 @@ apps/web  ──(same screens)──▶  data/store.ts ──▶ POST /api/v2/da
 
 ## Deploying
 
+**Recommended: one server on your own domain with Docker and automatic HTTPS — see [DEPLOY.md](DEPLOY.md).** The options below host the app and the API separately.
+
 ### API (Render)
 
 - **Build command:** `corepack enable && pnpm install --frozen-lockfile && pnpm turbo run build --filter=@civil/api`

@@ -35,3 +35,7 @@ minio-data
 uploads
 temp
 .pgdata
+
+# production deploy
+deploy/backups/*
+!deploy/backups/.gitkeep

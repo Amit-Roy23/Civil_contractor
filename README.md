@@ -16,6 +16,18 @@ This system provides live **site-wise stock, cost, and profit/loss** governance,
 
 ---
 
+## Going live on your own domain
+
+One server, one command, free HTTPS: see **[`docs/DEPLOY.md`](docs/DEPLOY.md)**.
+
+```bash
+git clone https://github.com/Amit-Roy23/Civil_contractor.git wcm && cd wcm
+sudo ./deploy/install.sh --domain erp.yourfirm.in --email you@yourfirm.in --company sd
+cd deploy && ./create-company.sh --code sd --from setup/saurajit-deb.json --owner-password '…'
+```
+
+---
+
 ## Web app — client demo
 
 The web app in `apps/web` covers **every module in the requirements specification** (masters, site inventory,

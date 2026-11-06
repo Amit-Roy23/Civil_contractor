@@ -19,10 +19,19 @@ import { DateRuleNote, entryDateRule, Money, useAutoOpen, useModuleTab, useNames
 
 export default function Plant() {
   const { tab, tabsEl } = useModuleTab('plant');
+  const plants = usePlants();
   return (
     <div>
       <PageHeader title="Production plants" subtitle="Each plant keeps its own raw-material ledger; every tonne it dispatches carries its share of raw material and running cost to the receiving site." />
       {tabsEl}
+      {!plants.length ? <Callout>No plant yet, or none in your access. Add the plant and its store in Masters › Plants.</Callout> : <PlantTabs tab={tab} />}
+    </div>
+  );
+}
+
+function PlantTabs({ tab }: { tab: string }) {
+  return (
+    <div>
       {tab === 'overview' && <OverviewTab />}
       {tab === 'production' && <ProductionTab />}
       {tab === 'dispatch' && <DispatchTab />}
@@ -463,7 +472,7 @@ function RawTab() {
   const db = useDB();
   const n = useNames();
   const plants = usePlants();
-  const [plantId, setPlantId] = useState(plants[0]?.id || 'p1');
+  const [plantId, setPlantId] = useState(plants[0]?.id || '');
   const [range, setRange] = useRange('mtd');
   const plant = n.lk.plant[plantId]!;
   const rows = useMemo(() => stockRegister(db, plant.storeId, range), [db, plant, range]);
@@ -537,8 +546,8 @@ function AllocationTab() {
     const f = list[0]!;
     return `${n.site(f.siteId)} received ${qty(f.productQty, n.unit(f.productId))} of ${n.mat(f.productId)} containing ${list.map((l) => `${qty(l.qty, n.unit(l.materialId))} ${n.mat(l.materialId).replace(/ \(.*\)/, '')}`).join(', ')}`;
   });
-  const bitumen = Object.entries(groupBy(rows.filter((r) => r.materialId === 'm12'), (r) => r.siteId)).map(([sid, l]) => ({ label: n.site(sid), value: sum(l, (x) => x.qty) }));
-  const cement = Object.entries(groupBy(rows.filter((r) => r.materialId === 'm01'), (r) => r.siteId)).map(([sid, l]) => ({ label: n.site(sid), value: sum(l, (x) => x.qty) }));
+  const bitumen = Object.entries(groupBy(rows.filter((r) => n.lk.material[r.materialId]?.category === 'Bitumen'), (r) => r.siteId)).map(([sid, l]) => ({ label: n.site(sid), value: sum(l, (x) => x.qty) }));
+  const cement = Object.entries(groupBy(rows.filter((r) => n.lk.material[r.materialId]?.category === 'Cement'), (r) => r.siteId)).map(([sid, l]) => ({ label: n.site(sid), value: sum(l, (x) => x.qty) }));
   return (
     <div className="space-y-4">
       <div className="flex justify-end"><DateRangePicker value={range} onChange={setRange} /></div>
@@ -645,7 +654,7 @@ function ReconTab() {
   const db = useDB();
   const n = useNames();
   const plants = usePlants();
-  const [plantId, setPlantId] = useState(plants[0]?.id || 'p1');
+  const [plantId, setPlantId] = useState(plants[0]?.id || '');
   const months = Array.from(new Set(db.production.map((p) => monthOf(p.date)))).sort().reverse();
   const [month, setMonth] = useState(months[0] || monthOf(today()));
   const rows = useMemo(() => plantReconciliation(db, plantId, month), [db, plantId, month]);

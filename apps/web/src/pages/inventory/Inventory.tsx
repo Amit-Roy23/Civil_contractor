@@ -251,7 +251,7 @@ function TxnForm({ kind, onClose }: { kind: FormKind; onClose: () => void }) {
   const allSiteStores = db.stores.filter((x) => x.type === 'SITE').map((x) => ({ value: x.id, label: x.name }));
   const [d, setD] = useState(today());
   const [from, setFrom] = useState(lk.store[def]?.type === 'SITE' || kind === 'ADJUSTMENT' || kind === 'WASTAGE' ? def : siteStores[0]?.value || '');
-  const [to, setTo] = useState(kind === 'RETURN' ? 'cs' : '');
+  const [to, setTo] = useState(kind === 'RETURN' ? db.stores.find((x) => x.type === 'CENTRAL')?.id || '' : '');
   const [boq, setBoq] = useState('');
   const [work, setWork] = useState('');
   const [reason, setReason] = useState('');
@@ -525,7 +525,7 @@ function LedgerTab() {
   const db = useDB();
   const def = useDefaultStore();
   const [store, setStore] = useState(def);
-  const [mat, setMat] = useState('m01');
+  const [mat, setMat] = useState(db.materials.find((m) => m.active !== false)?.id || '');
   const [range, setRange] = useRange('90d');
   const storeOpts = useStoreOptions();
   const n = useNames();

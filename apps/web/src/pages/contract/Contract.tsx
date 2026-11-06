@@ -184,6 +184,12 @@ function SiteSheet({ siteId, picker }: { siteId: string; picker: React.ReactNode
 /* ================= Budget vs actual (CST-03) ================= */
 function BudgetTab() {
   const db = useDB();
+  if (!db.sites.length) return <Callout>No works yet. Add the first work in Masters › Works.</Callout>;
+  return <BudgetTabBody />;
+}
+
+function BudgetTabBody() {
+  const db = useDB();
   const s = useSession();
   const { site, picker } = useContractSite();
   const st = db.sites.find((x) => x.id === site)!;
