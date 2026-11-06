@@ -102,6 +102,27 @@ Then:
 - **Your own copy.** Download a backup **every week** and keep it off the server, for example in Google Drive.
 - **Atlas backups.** On M10 and higher, Atlas keeps its own continuous backups with point-in-time restore. Turn them on in the cluster's Backup tab.
 
+## If the sign-in page says "Cannot reach the server" or "The server is not running at /api"
+
+Open `https://<your-site>/health` in the browser and look at what it shows.
+
+| `/health` shows | Meaning | Fix |
+|---|---|---|
+| `{"status":"ok","database":"ok"}` | The server is fine. | Clear the browser cache, or press Ctrl+Shift+R, and sign in. |
+| `{"status":"down","problems":[…]}` | A Vercel variable is missing. | Add what it names (`MONGODB_URI`, `JWT_SECRET`), then **Redeploy**. |
+| `{"status":"down","database":"unreachable"}` | MongoDB refuses the connection. | In Atlas, check **Network Access** has `0.0.0.0/0`, and check the password inside `MONGODB_URI`. |
+| The sign-in page itself, or "404" | Only the web pages were deployed, not the server. | See the checklist below. |
+
+**Checklist in Vercel** (Project › Settings):
+
+1. **Environment Variables:** delete `VITE_API_URL` and `VITE_DATA_MODE` if they are there, left from an older set-up. Then add `MONGODB_URI`, `JWT_SECRET`, `SETUP_KEY`, `CRON_SECRET`, `DEFAULT_COMPANY=sd` and `ENABLE_EXPERIMENTAL_COREPACK=1`.
+2. **Build and Deployment:**
+   - **Framework Preset:** Other.
+   - **Build Command, Output Directory and Install Command:** switch the **Override** toggles **off**. The repository's `vercel.json` sets them.
+   - **Root Directory:** either the repository root or `apps/web` works.
+3. **Redeploy.** Go to Deployments › ⋯ › Redeploy, and untick "Use existing Build Cache".
+4. **Check the build.** In the build log, the last lines must say `✓ Vercel output written to .vercel/output (static app + /api function …)`.
+
 ## Limits worth knowing
 
 - **Vercel plan.** The Hobby (free) plan is for non-commercial use. For a client's business, use **Vercel Pro**.
