@@ -214,7 +214,7 @@ function FuelForm({ onClose }: { onClose: () => void }) {
   const save = () => {
     if (rule.error) return toast.error(rule.error);
     if (!v || !litres || reading === '' || !site || !src) return toast.error('Vehicle, litres, meter reading, site and source are required');
-    if (Number(litres) > v.tankCapacity * 1.05) return toast.error(`More than tank capacity (${v.tankCapacity} L)`);
+    if (v.tankCapacity > 0 && Number(litres) > v.tankCapacity * 1.05) return toast.error(`More than tank capacity (${v.tankCapacity} L)`);
     const status: FuelIssue['status'] = warn || rule.needsApproval || amount > db.settings.approvalLimits.fuel ? 'PENDING' : 'APPROVED';
     const no = nextNo('FIS', d);
     insert('fuelIssues', { no, date: d, time, vehicleId: vid, driver: v.driver, siteId: site, sourceId: src, litres: Number(litres), rate: Number(rate), odometer: v.meterType !== 'HOURS' ? Number(reading) : undefined, hourMeter: v.meterType === 'HOURS' ? Number(reading) : undefined, fullTank: full, slipPhoto: photos > 0, meterPhoto: photos > 1, status, flag: warn || undefined } as any, `Fuel issue ${no} ${vehicleName(v)} ${litres} L`, 'Fuel issue');
@@ -225,7 +225,7 @@ function FuelForm({ onClose }: { onClose: () => void }) {
     <Drawer open onClose={onClose} title="Fuel load" subtitle="reading must be more than the last one; odd jumps are flagged" footer={<><span className="mr-auto text-sm">Amount <b><Money v={amount} /></b></span><Button onClick={onClose}>Cancel</Button><Button variant="primary" onClick={save} icon={<CircleCheck className="w-4 h-4" />}>Save</Button></>}>
       <div className="space-y-4">
         <Field label="Vehicle / machine" required><Combo value={vid} onChange={pick} options={vehicleOpts(vs)} /></Field>
-        {v && <Callout>Driver <b>{v.driver}</b> · tank {v.tankCapacity} L · standard {v.meterType === 'HOURS' ? `${v.stdLph} LPH` : `${v.stdKmpl} KMPL`} · last reading <b>{num(last, 1)} {unitOf(v)}</b></Callout>}
+        {v && <Callout>{v.driver ? <>Driver <b>{v.driver}</b> · </> : null}tank {v.tankCapacity ? `${v.tankCapacity} L` : 'size not entered'} · standard {v.meterType === 'HOURS' ? (v.stdLph ? `${v.stdLph} LPH` : 'not set') : v.stdKmpl ? `${v.stdKmpl} KMPL` : 'not set'} · last reading <b>{num(last, 1)} {unitOf(v)}</b></Callout>}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Date" required><Input type="date" value={d} max={today()} onChange={(e) => setD(e.target.value)} /></Field>
           <Field label="Time"><Input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></Field>

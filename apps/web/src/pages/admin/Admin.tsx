@@ -234,6 +234,36 @@ function RolesTab() {
 }
 
 /* ================= Settings ================= */
+/** masters from the client's own documents that an existing company does not have yet */
+function TemplateCard() {
+  const s = useSession();
+  const [gaps, setGaps] = useState<{ template: string | null; missing: string[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (API_MODE && s.isAdmin) api.templateGaps().then(setGaps, () => setGaps(null));
+  }, [s.isAdmin]);
+  if (!gaps?.template || !gaps.missing.length) return null;
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const r = await api.applyTemplate();
+      toast.success(`${r.added.length} item(s) added`, 'From your requirement documents');
+      setGaps({ ...gaps, missing: [] });
+    } catch (e) {
+      toast.error('Not added', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card className="p-5">
+      <CardHeader title="Masters from your documents" subtitle="Items from your requirement documents that this company does not have yet. Only missing items are added — nothing you entered is changed." />
+      <ul className="mt-3 text-sm space-y-1 list-disc pl-5">{gaps.missing.map((x) => <li key={x}>{x}</li>)}</ul>
+      <Button variant="primary" className="mt-4" loading={busy} onClick={() => void apply()}>Add {gaps.missing.length} missing item(s)</Button>
+    </Card>
+  );
+}
+
 function SettingsTab() {
   const db = useDB();
   const s = useSession();
@@ -246,6 +276,7 @@ function SettingsTab() {
   const N = (x: number | '') => (x === '' ? 0 : Number(x));
   return (
     <div className="space-y-4">
+      <TemplateCard />
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <Card>
           <CardHeader title="Approval limits" subtitle="entries above these amounts need approval" icon={<ShieldCheck className="w-[18px] h-[18px]" />} />

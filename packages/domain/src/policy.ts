@@ -374,7 +374,9 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
       need(v, 'Unknown vehicle');
       need(s.seesSite(r.siteId), 'Site not in your access', 403);
       need(!!find(db, 'fuelSources', r.sourceId), 'Unknown fuel source');
-      need(r.litres > 0 && r.litres <= v.tankCapacity * 1.05 + 1, `Litres must be between 0 and the tank capacity (${v.tankCapacity} L)`);
+      // the tank size is checked once it is entered on the machine; until then only a sensible upper bound
+      if (v.tankCapacity > 0) need(r.litres > 0 && r.litres <= v.tankCapacity * 1.05 + 1, `Litres must be between 0 and the tank capacity (${v.tankCapacity} L)`);
+      else need(r.litres > 0 && r.litres <= 1000, 'Litres must be between 0 and 1,000 — enter the tank capacity on the machine to check fills exactly');
       const reading = v.meterType === 'HOURS' ? r.hourMeter : r.odometer;
       need(reading !== undefined, v.meterType === 'HOURS' ? 'Hour meter reading is required' : 'Odometer reading is required');
       const late = backdated(ctx, r.date);
