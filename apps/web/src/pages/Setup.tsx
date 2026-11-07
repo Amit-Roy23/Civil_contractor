@@ -66,3 +66,42 @@ export function SetupCard({ cfg, onDone }: { cfg: LoginConfig; onDone: (username
     </div>
   );
 }
+
+/** the Admin forgot the password: set a new one with the set-up key from the hosting settings */
+export function RecoverCard({ company, onDone, onCancel }: { company?: string; onDone: (username: string) => void; onCancel: () => void }) {
+  const [f, setF] = useState({ setupKey: '', username: '', newPassword: '', confirm: '' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    setErr('');
+    if (!f.username.trim()) return setErr('Enter the Admin username');
+    if (f.newPassword.length < 8) return setErr('New password: at least 8 characters');
+    if (f.newPassword !== f.confirm) return setErr('The two passwords do not match');
+    setBusy(true);
+    try {
+      const r = await api.resetOwner({ setupKey: f.setupKey, username: f.username.trim(), newPassword: f.newPassword, company: company || undefined });
+      onDone(r.username);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="bg-surface border border-line rounded-3xl shadow-card p-6 sm:p-8">
+      <h2 className="text-xl font-bold flex items-center gap-2"><KeyRound className="w-5 h-5 text-brand-strong" /> Forgot Admin password</h2>
+      <p className="text-sm text-fg-2 mt-1">For the Admin only, with the set-up key saved in the hosting settings. Other users ask the Admin to set a new password in Administration › Users.</p>
+      <div className="mt-5 space-y-4">
+        <Field label="Set-up key" required><Input type="password" value={f.setupKey} onChange={(e) => setF({ ...f, setupKey: e.target.value })} autoComplete="off" /></Field>
+        <Field label="Admin username" required><Input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value.toLowerCase() })} autoCapitalize="none" placeholder="saurajit" /></Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="New password" required><Input type="password" value={f.newPassword} onChange={(e) => setF({ ...f, newPassword: e.target.value })} autoComplete="new-password" /></Field>
+          <Field label="Confirm new password" required><Input type="password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} autoComplete="new-password" /></Field>
+        </div>
+        {err && <p className="text-sm text-bad">{err}</p>}
+        <Button variant="primary" size="lg" className="w-full justify-center" icon={<CircleCheck className="w-4 h-4" />} loading={busy} onClick={() => void save()}>Set new password</Button>
+        <button type="button" className="w-full text-sm text-muted hover:text-fg" onClick={onCancel}>Back to sign in</button>
+      </div>
+    </div>
+  );
+}

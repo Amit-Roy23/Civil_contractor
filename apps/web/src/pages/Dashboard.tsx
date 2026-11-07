@@ -41,6 +41,8 @@ import { Badge, Button, Card, CardHeader, Progress, Stat } from '../components/u
 import { BarList, ColumnChart, Donut, Sparkline } from '../components/ui/charts';
 import { addDays, date, dateShort, inr, inrCompact, num, qty, today } from '../lib/format';
 import { navigate } from '../lib/router';
+import { API_MODE } from '../data/api';
+import { GettingStarted } from '../components/GettingStarted';
 import { cn, groupBy, sum } from '../lib/utils';
 
 function greeting() {
@@ -131,6 +133,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {API_MODE && <GettingStarted db={db} s={s} />}
       {/* header */}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>

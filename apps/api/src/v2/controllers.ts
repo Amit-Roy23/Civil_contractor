@@ -10,6 +10,7 @@ import { Ctx2, signAccess, V2Auth, V2Guard, type V2Request } from './auth.js';
 import { DemoService } from './demo.service.js';
 import { BackupService, counts } from './backup.service.js';
 import { clock, newId } from './clock.js';
+import { smsConfigured } from './sms.js';
 
 const str = (v: unknown, max = 200) => (typeof v === 'string' && v.length <= max ? v : '');
 
@@ -31,7 +32,7 @@ export class AuthV2Controller {
       const { db } = await this.store.load(demoCo.id);
       demo = { companyId: demoCo.id, users: db.users.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, username: u.username, roleId: u.roleId, role: db.roles.find((r) => r.id === u.roleId)?.name, sites: u.siteIds.length })) };
     }
-    return { demo, needsCompany: list.filter((c) => !c.is_demo && !c.is_test).length > 1 && !process.env.DEFAULT_COMPANY, testCopies: list.some((c) => c.is_test) };
+    return { demo, needsCompany: list.filter((c) => !c.is_demo && !c.is_test).length > 1 && !process.env.DEFAULT_COMPANY, testCopies: list.some((c) => c.is_test), sms: smsConfigured() };
   }
 
   @Post('login')

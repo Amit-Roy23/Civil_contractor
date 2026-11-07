@@ -75,6 +75,10 @@ export interface LoginConfig {
   needsCompany: boolean;
   /** a new server with no company yet (MongoDB / serverless version) */
   setup?: null | { templates: Array<{ id: string; label: string }>; keyConfigured: boolean };
+  /** an SMS provider is set up (OTP sign-in, two-factor) */
+  sms?: boolean;
+  /** Admin password recovery with the set-up key is available */
+  recovery?: boolean;
 }
 export interface Snapshot {
   rev: number;
@@ -111,6 +115,7 @@ export interface RestoreCheck {
 
 export const api = {
   config: () => call<LoginConfig>('/auth/config'),
+  resetOwner: (b: { setupKey: string; username: string; newPassword: string; company?: string }) => call<{ ok: true; username: string; company: string }>('/setup/reset-owner', b),
   setup: (b: Record<string, unknown>) => call<{ ok: true; company: string; username: string; name: string }>('/setup', b),
   login: (username: string, password: string, company?: string) => call<SignedIn | OtpNeeded>('/auth/login', { username, password, company }),
   otpRequest: (login: string, company?: string) => call<{ ticket: string; phone: string; demo: boolean }>('/auth/otp/request', { login, company }),
@@ -123,6 +128,8 @@ export const api = {
   command: (cmd: unknown, cmdId?: string) => call<CommandResult>('/data/commands', { cmd, cmdId }),
   setUserPassword: (userId: ID, password: string) => call<{ ok: true }>(`/admin/users/${encodeURIComponent(userId)}/password`, { password }),
   resetDemo: () => call<{ ok: true }>('/admin/reset-demo', {}),
+  templateGaps: () => call<{ template: string | null; missing: string[] }>('/admin/template'),
+  applyTemplate: () => call<{ added: string[] }>('/admin/template', {}),
   backups: () => call<{ backups: BackupInfo[]; testCopies: Array<{ id: string; name: string }>; daily: boolean; offsite: boolean }>('/admin/backups'),
   backupNow: () => call<BackupInfo>('/admin/backups', {}),
   restoreTest: (id: number) => call<RestoreCheck>(`/admin/backups/${id}/restore-test`, {}),

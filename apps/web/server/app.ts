@@ -53,6 +53,7 @@ export async function handle(req: Req): Promise<Res> {
     }
     if (m === 'POST' && r === '/auth/demo') throw new HttpError(403, 'There is no demo on this server');
     if (m === 'POST' && r === '/setup') return ok(await setup(req));
+    if (m === 'POST' && r === '/setup/reset-owner') return ok(await resetOwner(req));
     if (r === '/cron/daily') return ok(await cronDaily(req));
 
     /* ---------- signed in ---------- */
@@ -101,6 +102,14 @@ export async function handle(req: Req): Promise<Res> {
       await store.setPassword(c.companyId, id, await auth.hashPassword(pw));
       return ok({ ok: true });
     }
+    if (m === 'GET' && r === '/admin/template') {
+      admin(c);
+      return ok(templateGaps(c.db).summary);
+    }
+    if (m === 'POST' && r === '/admin/template') {
+      admin(c);
+      return ok(await applyTemplate(c));
+    }
     if (m === 'POST' && r === '/admin/reset-demo') throw new HttpError(403, 'There is no demo on this server');
     throw new HttpError(404, 'Not found');
   } catch (e) {
@@ -132,6 +141,10 @@ async function config() {
     demo: null,
     needsCompany: real.length > 1 && !process.env.DEFAULT_COMPANY,
     testCopies: list.some((c) => c.is_test),
+    // OTP sign-in and two-factor need an SMS provider
+    sms: !!(process.env.MSG91_AUTH_KEY && process.env.MSG91_OTP_TEMPLATE_ID),
+    // the admin can set a new password with the set-up key
+    recovery: (process.env.SETUP_KEY || '').length >= 12,
     // first visit: no company yet — the login page offers the one-time set-up
     setup: real.length === 0 ? { templates: Object.entries(TEMPLATES).map(([id, t]) => ({ id, label: t.label })), keyConfigured: (process.env.SETUP_KEY || '').length >= 12 } : null,
   };
@@ -171,6 +184,89 @@ async function setup(req: Req) {
   await store.replaceAll(code, db.company.name, db);
   await store.setPassword(code, db.users[0]!.id, await auth.hashPassword(password));
   return { ok: true, company: code, username: db.users[0]!.username, name: db.company.name };
+}
+
+/* ---------- admin forgot the password: a new one with the set-up key ---------- */
+async function resetOwner(req: Req) {
+  await store.rateLimit(`reset:${req.ip}`, 5, 15 * 60_000);
+  const key = process.env.SETUP_KEY || '';
+  if (key.length < 12) throw new HttpError(403, 'Password recovery is off: set SETUP_KEY (12+ characters) in the hosting settings and redeploy');
+  const given = Buffer.from(str(req.body?.setupKey, 200));
+  const want = Buffer.from(key);
+  if (given.length !== want.length || !timingSafeEqual(given, want)) throw new HttpError(403, 'Wrong set-up key');
+  const pw = str(req.body?.newPassword, 200);
+  if (pw.length < 8) throw new HttpError(400, 'New password: at least 8 characters');
+  const company = await auth.resolveCompany(str(req.body?.company, 64));
+  const { db } = await store.load(company.id);
+  const user = auth.findUser(db, str(req.body?.username, 100));
+  // only an Admin (owner role) is recovered this way; everyone else is reset by the Admin
+  if (!user || user.roleId !== 'owner') throw new HttpError(404, 'No Admin with this username — other users ask the Admin to reset their password');
+  await store.setPassword(company.id, user.id, await auth.hashPassword(pw));
+  const { now } = clock();
+  await store.write(company.id, (d) => {
+    const a: AuditEntry = { id: newId('au'), at: now, userId: user.id, action: 'UPDATE', entity: 'User', entityId: user.id, label: `${user.name}: Admin password reset with the set-up key` };
+    return { db: { ...d, audit: [...d.audit, a] }, changes: [{ coll: 'audit', id: a.id, rec: a }] };
+  });
+  return { ok: true, username: user.username, company: company.id };
+}
+
+/* ---------- masters from the client's documents: add what an existing company is missing ---------- */
+function templateFor(db: DB) {
+  // the template whose firm (GSTIN) is this company's
+  return Object.entries(TEMPLATES).find(([, t]) => (t.spec.firms || []).some((f: any) => db.firms.some((x) => x.gstin && x.gstin === f.gstin)));
+}
+function templateGaps(db: DB) {
+  const hit = templateFor(db);
+  const empty = { summary: { template: null as string | null, missing: [] as string[] }, changes: [] as Change[], next: db };
+  if (!hit) return empty;
+  const [id, t] = hit;
+  const { db: tpl } = buildCompanyDB(t.spec, clock().today);
+  const missing: string[] = [];
+  const changes: Change[] = [];
+  let next: DB = db;
+  const put = (coll: CollectionKey, rec: any, label: string) => {
+    next = { ...next, [coll]: [...((next as any)[coll] as any[]).filter((x: any) => x.id !== rec.id), rec] } as DB;
+    changes.push({ coll, id: rec.id, rec });
+    missing.push(label);
+  };
+  const codeOf = (x: any) => String(x.code || '').toLowerCase();
+  for (const coll of ['materials', 'fuelSources', 'vehicles', 'clients'] as CollectionKey[]) {
+    for (const r of (tpl as any)[coll] as any[]) if (!((next as any)[coll] as any[]).some((x: any) => codeOf(x) === codeOf(r) || x.id === r.id)) put(coll, r, `${coll === 'materials' ? 'Material' : coll === 'fuelSources' ? 'Fuel source' : coll === 'vehicles' ? 'Machine' : 'Client'}: ${r.name || r.regNo || r.model || r.code}`);
+  }
+  for (const e of tpl.expenseHeads) if (!next.expenseHeads.some((x) => x.head.toLowerCase() === e.head.toLowerCase() && x.subHead.toLowerCase() === e.subHead.toLowerCase())) put('expenseHeads', e, `Expense head: ${e.head} › ${e.subHead}`);
+  // material ids in this company, by code (tanks and plant fuel point at them)
+  const matId = (tplId: string) => {
+    const code = tpl.materials.find((m) => m.id === tplId)?.code?.toLowerCase();
+    return next.materials.find((m) => m.code.toLowerCase() === code)?.id;
+  };
+  for (const s of tpl.stores) {
+    const cur = next.stores.find((x) => codeOf(x) === codeOf(s));
+    if (cur && !(cur.locations || []).length && (s.locations || []).length) {
+      const locations = s.locations!.map((l) => ({ ...l, materialId: matId(l.materialId) || l.materialId }));
+      put('stores', { ...cur, locations }, `Tanks and stockpiles of ${cur.name}: ${locations.map((l) => l.name).join(', ')}`);
+    }
+  }
+  for (const p of tpl.plants) {
+    const cur = next.plants.find((x) => codeOf(x) === codeOf(p));
+    if (!cur) continue;
+    const patch: any = {};
+    if (!cur.burnerFuelId && p.burnerFuelId) patch.burnerFuelId = matId(p.burnerFuelId);
+    if (!cur.dgFuelId && p.dgFuelId) patch.dgFuelId = matId(p.dgFuelId);
+    if (Object.values(patch).some(Boolean)) put('plants', { ...cur, ...patch }, `${cur.name}: burner fuel and DG fuel linked`);
+  }
+  return { summary: { template: id, missing }, changes, next };
+}
+async function applyTemplate(c: auth.Ctx) {
+  const { now } = clock();
+  let added: string[] = [];
+  await store.write(c.companyId, (db) => {
+    const g = templateGaps(db);
+    added = g.summary.missing;
+    if (!added.length) return { db, changes: [] };
+    const a: AuditEntry = { id: newId('au'), at: now, userId: c.session.user.id, action: 'CREATE', entity: 'Masters', entityId: 'template', label: `Masters from the client's documents: ${added.length} item(s) added` };
+    return { db: { ...g.next, audit: [...g.next.audit, a] }, changes: [...g.changes, { coll: 'audit', id: a.id, rec: a }] };
+  });
+  return { added };
 }
 
 /* ---------- daily backup, called by Vercel Cron ---------- */

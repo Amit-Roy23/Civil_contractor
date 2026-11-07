@@ -85,6 +85,23 @@ Then:
 - add each person in **Administration › Users**, limited to their works;
 - load the opening data from Excel in **Masters › Import & export**.
 
+## Staff logins and passwords
+
+The Admin gives each person their own login in **Administration › Users** › **Add user**:
+
+- **Full name** and **username.** The username is what they type to sign in: small letters, no spaces.
+- **Password.** Type one, or click **Generate** for an easy-to-read one, then pass it on to the person.
+- **Role.** The role decides what they can see and do: Accountant, Store Keeper, Site Engineer, Plant In-charge, Fleet In-charge, or a role of your own.
+- **Works.** Pick which works the person can see. For example, a site engineer sees only his works.
+
+**Other roles, such as Manager or Supervisor:** go to **Administration › Roles & permissions › New role**. Name the role, start from an existing role's permissions, tick what it may view, add, edit or approve, and click **Save**.
+
+**A user forgets their password:** the Admin opens that user in Administration › Users, types a **New password**, and clicks Save.
+
+**The Admin forgets the password:** on the sign-in page, click **I am the Admin**. Enter the `SETUP_KEY` from Vercel, the Admin username (`saurajit`) and a new password. Keep `SETUP_KEY` in Vercel for this; only someone with access to the Vercel settings can use it.
+
+**Someone leaves:** open the user and switch **Active** off. They can no longer sign in, and their past entries stay. A user can never disable themselves or change their own role, so the Admin cannot lock themselves out.
+
 ## 5. Daily use
 
 - **Shared data:** every phone and PC works on the same data. Changes appear on the others within 20 seconds.
