@@ -15,6 +15,7 @@ const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   inventory: lazy(() => import('./pages/inventory/Inventory')),
   purchase: lazy(() => import('./pages/purchase/Purchase')),
   labour: lazy(() => import('./pages/labour/Labour')),
+  staff: lazy(() => import('./pages/staff/Staff')),
   expenses: lazy(() => import('./pages/expenses/Expenses')),
   fleet: lazy(() => import('./pages/fleet/Fleet')),
   plant: lazy(() => import('./pages/plant/Plant')),

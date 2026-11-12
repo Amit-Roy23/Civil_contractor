@@ -110,7 +110,7 @@ export function WorksTab() {
   );
 }
 
-const ZERO = { MATERIAL: 0, LABOUR: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEAD: 0 };
+const ZERO = { MATERIAL: 0, LABOUR: 0, STAFF: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEAD: 0 };
 const emptyGuarantee = () => ({ amount: 0, mode: '' as const, bank: '', number: '', issueDate: '', validity: '', claimDate: '' });
 
 export function WorkForm({ rec, onClose }: { rec: Partial<Site>; onClose: () => void }) {
@@ -385,8 +385,8 @@ export function WorkForm({ rec, onClose }: { rec: Partial<Site>; onClose: () => 
               <Field label="Value of work done"><NumberInput value={v.openingWorkDone ?? ''} onChange={(x) => set({ openingWorkDone: x })} prefix="₹" /></Field>
               <Field label="Billed (gross)"><NumberInput value={v.openingBilled ?? ''} onChange={(x) => set({ openingBilled: x })} prefix="₹" /></Field>
               <Field label="Received"><NumberInput value={v.openingReceived ?? ''} onChange={(x) => set({ openingReceived: x })} prefix="₹" /></Field>
-              {(['MATERIAL', 'LABOUR', 'SUBCONTRACT', 'VEHICLE', 'MISC', 'OVERHEAD'] as const).map((h) => (
-                <Field key={h} label={`Cost so far — ${({ MATERIAL: 'material', LABOUR: 'labour', SUBCONTRACT: 'sub-contract', VEHICLE: 'machinery', MISC: 'site expenses', OVERHEAD: 'overhead' })[h]}`}>
+              {(['MATERIAL', 'LABOUR', 'STAFF', 'SUBCONTRACT', 'VEHICLE', 'MISC', 'OVERHEAD'] as const).map((h) => (
+                <Field key={h} label={`Cost so far — ${({ MATERIAL: 'material', LABOUR: 'labour', STAFF: 'staff salary', SUBCONTRACT: 'sub-contract', VEHICLE: 'machinery', MISC: 'site expenses', OVERHEAD: 'overhead' })[h]}`}>
                   <NumberInput value={v.openingCost?.[h] || ''} onChange={(x) => set({ openingCost: { ...ZERO, ...v.openingCost, [h]: Number(x) || 0 } })} prefix="₹" />
                 </Field>
               ))}

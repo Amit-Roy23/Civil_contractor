@@ -7,6 +7,7 @@ import { poStatus, validateMeter, wageFor } from './selectors.js';
 import { daysBetween, fyCode } from './format.js';
 import { round, sum } from './utils.js';
 import { clientDeductions, stageStatus, timeAllowedMonths } from './works.js';
+import { advanceRecovered, buildSalaryLines, employedOn } from './staffpay.js';
 import { templateById, type ImportOp } from './imports.js';
 import { billLines, billTotals, computeDeductions, contractRate, invoiceKey, invoiceNo, legacyDeductions, measureQty, measuredUpto, priceAdjustment, tdsFor } from './billing.js';
 
@@ -77,11 +78,12 @@ const MODULE: Record<CollectionKey, ModuleKey> = {
   production: 'plant', dispatches: 'plant', plantCosts: 'plant', stockpiles: 'plant',
   measurements: 'contract', raBills: 'contract', guarantees: 'contract', bankFacilities: 'contract', taxCredits: 'contract',
   tankDips: 'inventory', salesInvoices: 'plant', labTests: 'contract', safety: 'labour', siteRegisters: 'contract', dprs: 'contract', hireOuts: 'fleet', loans: 'expenses', subsidyClaims: 'expenses',
+  staff: 'staff', staffAttendance: 'staff', staffAdvances: 'staff', salaryRuns: 'staff',
   roles: 'admin', users: 'admin', audit: 'admin', notifications: 'dashboard',
 };
 
 /** entries that carry money only — need rate visibility (ROLE-03) */
-const MONEY: CollectionKey[] = ['pos', 'quotations', 'invoices', 'payments', 'debitNotes', 'overheads', 'plantCosts', 'raBills', 'workOrders', 'fuelPurchases', 'guarantees', 'bankFacilities', 'taxCredits', 'salesInvoices', 'hireOuts', 'loans', 'subsidyClaims'];
+const MONEY: CollectionKey[] = ['staffAdvances', 'salaryRuns', 'pos', 'quotations', 'invoices', 'payments', 'debitNotes', 'overheads', 'plantCosts', 'raBills', 'workOrders', 'fuelPurchases', 'guarantees', 'bankFacilities', 'taxCredits', 'salesInvoices', 'hireOuts', 'loans', 'subsidyClaims'];
 
 const STOCK_PREFIX: Record<string, string> = { OPENING: 'OPN', ISSUE: 'MIN', GRN: 'GRN', PLANT_RECEIPT: 'PRC', CONSUMPTION: 'CON', TRANSFER: 'TRF', RETURN: 'RTN', WASTAGE: 'WST', ADJUSTMENT: 'ADJ' };
 const SIMPLE_PREFIX: Partial<Record<CollectionKey, string>> = { requisitions: 'REQ', quotations: 'QTN', pos: 'PO', invoices: 'PINV', payments: 'PAY', debitNotes: 'DN', wageRuns: 'WAGE', workOrders: 'WO', subconBills: 'SCB', imprests: 'IMP', expenses: 'EXP', fuelPurchases: 'FPR', fuelIssues: 'FIS', jobCards: 'JC' };
@@ -106,6 +108,33 @@ function put(db: DB, coll: CollectionKey, rec: any): DB {
 }
 
 /** allocate the next voucher number for a prefix (server-side, gapless per prefix) */
+/** Aadhaar kept as its last 4 digits only; PAN and IFSC in capitals */
+function normaliseStaff(raw: Record<string, any>): Record<string, any> {
+  const r = { ...raw };
+  const a = String(r.aadhaar || '').replace(/\D/g, '');
+  if (a.length >= 4 && !/^XXXX-XXXX-\d{4}$/.test(String(r.aadhaar))) r.aadhaar = `XXXX-XXXX-${a.slice(-4)}`;
+  if (r.pan) r.pan = String(r.pan).toUpperCase().trim();
+  if (r.ifsc) r.ifsc = String(r.ifsc).toUpperCase().trim();
+  return r;
+}
+/** a posting names where the person works, and that must exist */
+function checkStaffPosting(db: DB, r: any) {
+  need(String(r.designation || '').trim(), 'Role / designation is required');
+  if (r.posting === 'SITE') need(r.siteId && find(db, 'sites', r.siteId), 'Choose the work this person is posted at');
+  if (r.posting === 'VEHICLE') need(r.vehicleId && find(db, 'vehicles', r.vehicleId), 'Choose the vehicle / machine');
+  if (r.posting === 'PLANT') need(r.plantId && find(db, 'plants', r.plantId), 'Choose the plant');
+  if (r.siteId) need(find(db, 'sites', r.siteId), 'Unknown work');
+  if (r.vehicleId) need(find(db, 'vehicles', r.vehicleId), 'Unknown vehicle');
+  if (r.plantId) need(find(db, 'plants', r.plantId), 'Unknown plant');
+  if (r.basis === 'PER_TRIP') need(r.vehicleId, 'A per-trip salary needs the vehicle whose trips are paid');
+  if (r.leftOn && r.joiningDate) need(r.leftOn >= r.joiningDate, 'Date of leaving is before the date of joining');
+}
+/** attendance of a month whose salary is approved cannot change */
+function salaryNotLocked(db: DB, date: string) {
+  const run = db.salaryRuns.find((x) => x.month === date.slice(0, 7) && x.status === 'APPROVED');
+  need(!run, `The salary for ${date.slice(0, 7)} is approved — attendance of that month is locked`, 409);
+}
+
 function allocate(ctx: Ctx, out: Result, prefix: string, date: string): string {
   const n = (out.db.seq[prefix] || 0) + 1;
   out.db = { ...out.db, seq: { ...out.db.seq, [prefix]: n } };
@@ -162,6 +191,8 @@ function serverOwned(coll: CollectionKey, raw: Record<string, unknown>): Record<
   if (coll === 'production') Object.assign(out, { productId: 'pending', runHours: 0 });
   if (coll === 'salesInvoices') Object.assign(out, { lines: [], status: 'ISSUED' });
   if (coll === 'hireOuts') out.status = 'BILLED';
+  if (coll === 'salaryRuns') Object.assign(out, { lines: [], payments: [], status: 'DRAFT' });
+  if (coll === 'staff') out.code = '';
   if (coll === 'siteRegisters') out.no = 'NEW';
   return out;
 }
@@ -187,6 +218,7 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
   else requirePerm(s, coll === 'labTests' && raw.plantId ? 'plant' : coll === 'salesInvoices' && raw.kind === 'GOODS' ? 'purchase' : MODULE[coll], 'add');
   if (MONEY.includes(coll)) need(s.showRates, 'Your role cannot see rates and amounts', 403);
 
+  if (coll === 'staff') raw = normaliseStaff(raw);
   // sales invoice lines are always built by the server (from the loads or the goods entered)
   const r = parse(coll, { ...serverOwned(coll, raw), ...raw, ...(coll === 'salesInvoices' ? { lines: [] } : {}), id: raw.id || ctx.newId() });
   need(!find(db, coll, r.id), 'Duplicate record id', 409);
@@ -566,6 +598,49 @@ function insert(ctx: Ctx, coll: CollectionKey, raw: Record<string, unknown>): Re
       need(r.date <= ctx.today, 'Future dates are not allowed');
       need(!db.dprs.some((x) => x.siteId === r.siteId && x.date === r.date), 'The DPR for this work and date already exists — open it to edit', 409);
       break;
+    case 'staff': {
+      checkStaffPosting(db, r);
+      if (!String(r.code).trim()) {
+        // STF-001, STF-002 … the next free number
+        const used = new Set(db.staff.map((x) => x.code.toUpperCase()));
+        let n = db.staff.length + 1;
+        while (used.has(`STF-${String(n).padStart(3, '0')}`)) n++;
+        r.code = `STF-${String(n).padStart(3, '0')}`;
+      }
+      need(!db.staff.some((x) => x.code.toLowerCase() === String(r.code).toLowerCase()), `Staff ID ${r.code} already exists`, 409);
+      r.active = r.active ?? true;
+      break;
+    }
+    case 'staffAttendance': {
+      const st = find(db, 'staff', r.staffId);
+      need(st, 'Unknown staff member');
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      need(employedOn(st, r.date), `${st.name} was not employed on ${r.date}`);
+      need(!db.staffAttendance.some((x) => x.staffId === r.staffId && x.date === r.date), `${st.name} is already marked for ${r.date} — change that entry instead`, 409);
+      salaryNotLocked(db, r.date);
+      if (r.status !== 'P' && r.status !== 'H') r.otHours = 0;
+      break;
+    }
+    case 'staffAdvances': {
+      const st = find(db, 'staff', r.staffId);
+      need(st, 'Unknown staff member');
+      need(r.amount > 0, 'Amount must be more than zero');
+      need(r.date <= ctx.today, 'Future dates are not allowed');
+      need(r.instalment <= r.amount, 'The instalment is more than the amount');
+      if (r.kind === 'LOAN') need(r.instalment > 0, 'Give the monthly instalment for a loan');
+      r.no = allocate(ctx, out, 'SADV', r.date);
+      break;
+    }
+    case 'salaryRuns': {
+      need(r.month <= ctx.today.slice(0, 7), 'Salary can be made only for this month or earlier');
+      need(!db.salaryRuns.some((x) => x.month === r.month && x.status !== 'CANCELLED'), `The salary sheet for ${r.month} already exists — open it`, 409);
+      r.lines = buildSalaryLines(db, r.month, [], r.id);
+      need(r.lines.length > 0, 'No staff on the payroll in this month');
+      r.status = 'DRAFT';
+      r.payments = [];
+      r.no = `SAL/${r.month}`;
+      break;
+    }
     case 'hireOuts':
       need(!!find(db, 'vehicles', r.vehicleId), 'Unknown machine');
       need(r.from <= r.to && r.to <= ctx.today, 'Hire period is not valid');
@@ -634,6 +709,7 @@ function importRows(ctx: Ctx, templateId: string, ops: ImportOp[]): Result {
   need(Array.isArray(ops) && ops.length > 0, 'Nothing to import');
   need(ops.length <= 5000, 'At most 5,000 rows in one import — split the file');
   if (t!.adminOnly) need(ctx.session.isAdmin, `Only Admin can import ${t!.title.toLowerCase()}`, 403);
+  if (t!.module) need(ctx.session.can(t!.module, 'add'), `Your role cannot import ${t!.title.toLowerCase()}`, 403);
   let db = ctx.db;
   const changes: Change[] = [];
   const audit: AuditDraft[] = [];
@@ -1043,6 +1119,76 @@ function update(ctx: Ctx, coll: CollectionKey, id: ID, patch: Record<string, unk
           const got = sum(p2.receipts, (x: any) => x.amount);
           need(got <= Math.round(total) + 1, `Receipts (${round(got, 2)}) are more than the invoice total (${Math.round(total)})`);
           after = { ...before, ...p2, createdAt: before.createdAt, createdBy: before.createdBy, status: p2.receipts.length ? (got >= total - 1 ? 'PAID' : 'PARTLY_PAID') : 'ISSUED' };
+        }
+        break;
+      }
+      case 'staff': {
+        requirePerm(s, 'staff', 'edit');
+        if ('active' in patch && patch.active !== before.active) {
+          need(s.can('staff', 'delete') || s.isAdmin, 'Your role cannot deactivate staff', 403);
+          action = 'DEACTIVATE';
+        }
+        const merged = normaliseStaff({ ...before, ...patch });
+        if (merged.code !== before.code) need(!db.staff.some((x) => x.id !== id && x.code.toLowerCase() === String(merged.code).toLowerCase()), `Staff ID ${merged.code} already exists`, 409);
+        after = parse('staff', merged);
+        after.createdAt = before.createdAt;
+        after.createdBy = before.createdBy;
+        checkStaffPosting(db, after);
+        break;
+      }
+      case 'staffAttendance': {
+        requirePerm(s, 'staff', 'edit');
+        only(['status', 'otHours', 'remark']);
+        salaryNotLocked(db, before.date);
+        after = parse('staffAttendance', { ...before, ...patch });
+        if (after.status !== 'P' && after.status !== 'H') after.otHours = 0;
+        break;
+      }
+      case 'staffAdvances': {
+        requirePerm(s, 'staff', 'edit');
+        only(['instalment', 'remark', 'ref']);
+        const done = advanceRecovered(db, id);
+        after = parse('staffAdvances', { ...before, ...patch });
+        need(after.instalment <= after.amount - done + 0.01, 'The instalment is more than the balance');
+        if (after.kind === 'LOAN') need(after.instalment > 0, 'Give the monthly instalment for a loan');
+        break;
+      }
+      case 'salaryRuns': {
+        const keys2 = Object.keys(patch);
+        if (patch.status === 'APPROVED') {
+          need(before.status === 'DRAFT', 'Only a draft salary sheet can be approved');
+          need(s.can('staff', 'approve'), 'Your role cannot approve salaries', 403);
+          // approve exactly what the attendance says now
+          const lines = buildSalaryLines(db, before.month, before.lines, id);
+          after = { ...before, lines, status: 'APPROVED', approvedOn: ctx.today };
+          action = 'APPROVE';
+        } else if (patch.status === 'CANCELLED') {
+          need(s.isAdmin, 'Only Admin can cancel a salary sheet', 403);
+          need(reason && reason.trim(), 'Reason is required to cancel');
+          need(!before.payments.length, 'Salary has been paid from this sheet — it cannot be cancelled');
+          after = { ...before, status: 'CANCELLED' };
+          action = 'CANCEL';
+        } else if (keys2.includes('payments')) {
+          requirePerm(s, 'staff', 'edit');
+          need(before.status === 'APPROVED', 'Approve the salary sheet before paying');
+          const p2 = schemas.salaryRuns.parse({ ...before, payments: patch.payments }).payments;
+          need(p2.length >= before.payments.length && before.payments.every((p: any, i: number) => JSON.stringify(p) === JSON.stringify(p2[i])), 'Earlier payments cannot be changed');
+          for (const p of p2.slice(before.payments.length)) {
+            const line = before.lines.find((l: any) => l.staffId === p.staffId);
+            need(line, 'This person is not on this salary sheet');
+            need(p.date <= ctx.today, 'Future dates are not allowed');
+            const paid = sum(p2.filter((x: any) => x.staffId === p.staffId), (x: any) => x.amount);
+            need(paid <= line.net + 0.5, `More than the net salary of ${find(db, 'staff', p.staffId)?.name || 'this person'}`);
+          }
+          after = { ...before, payments: p2 };
+        } else {
+          // a draft: other deductions per person, then everything is worked out again from attendance
+          requirePerm(s, 'staff', 'edit');
+          need(before.status === 'DRAFT', 'An approved salary sheet cannot be changed');
+          only(['other', 'recompute']);
+          const other = (patch.other || {}) as Record<string, { amount: number; note: string }>;
+          const keep = before.lines.map((l: any) => (other[l.staffId] ? { ...l, other: Math.max(0, Number(other[l.staffId].amount) || 0), otherNote: String(other[l.staffId].note || '').slice(0, 200) } : l));
+          after = { ...before, lines: buildSalaryLines(db, before.month, keep, id) };
         }
         break;
       }

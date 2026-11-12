@@ -3,6 +3,7 @@ import { billTotals, deductionDiff, mQty } from './billing.js';
 import { guaranteeAlerts } from './money.js';
 import { cubesDue, dipRows, productionRatios } from './ops.js';
 import { STATUTORY, licences, minWageBreaches } from './labourreg.js';
+import { staffDailyCost, licenceAlerts } from './staffpay.js';
 import type { CostHead, DB, Dispatch, FuelIssue, ID, LogEntry, PurchaseInvoice, RaBill, StockTxn, SubconBill, Vehicle } from './types.js';
 import { bkey, getLedger, isEffective, productionUse, type Movement } from './ledger.js';
 import { addDays, daysBetween, monthOf, today } from './format.js';
@@ -29,6 +30,7 @@ export const lookup = (db: DB) =>
     client: Object.fromEntries(db.clients.map((x) => [x.id, x])),
     subcon: Object.fromEntries(db.subcons.map((x) => [x.id, x])),
     worker: Object.fromEntries(db.workers.map((x) => [x.id, x])),
+    staff: Object.fromEntries((db.staff || []).map((x) => [x.id, x])),
     vehicle: Object.fromEntries(db.vehicles.map((x) => [x.id, x])),
     fuelSource: Object.fromEntries(db.fuelSources.map((x) => [x.id, x])),
     head: Object.fromEntries(db.expenseHeads.map((x) => [x.id, x])),
@@ -518,11 +520,54 @@ export function pettyCash(db: DB, siteId: ID) {
 }
 
 /** Head-office overhead allocation to sites (EXP-05) */
+/**
+ * Salaried staff cost, day by day, routed by posting: SITE → that work (head STAFF); VEHICLE → the works
+ * the vehicle worked at that day (head VEHICLE), else its current work, else head office; PLANT → the
+ * plant's running cost (in the ledger, not here); HEAD_OFFICE → the month's overhead pool.
+ */
+export function staffRouted(db: DB) {
+  return memo(db, 'staffRouted', () => {
+    const lk = lookup(db);
+    const logsBy = groupBy(db.logs, (l) => `${l.vehicleId}|${l.date}`);
+    const out: Array<{ date: string; staffId: ID; siteId?: ID; head: CostHead; amount: number; toOverhead?: boolean }> = [];
+    for (const c of staffDailyCost(db, today())) {
+      const s = lk.staff[c.staffId];
+      if (!s || s.posting === 'PLANT') continue;
+      if (s.posting === 'SITE' && s.siteId) {
+        out.push({ ...c, siteId: s.siteId, head: 'STAFF' });
+        continue;
+      }
+      if (s.posting === 'VEHICLE' && s.vehicleId) {
+        const logs = (logsBy[`${s.vehicleId}|${c.date}`] || []).filter((l) => !l.hiredOut);
+        const shares = new Map<ID, number>();
+        for (const l of logs) for (const x of logShares(l)) shares.set(x.siteId, (shares.get(x.siteId) || 0) + x.share);
+        const tot = sum([...shares.values()], (x) => x);
+        if (tot > 0) {
+          for (const [siteId, w] of shares) out.push({ ...c, siteId, head: 'VEHICLE', amount: (c.amount * w) / tot });
+          continue;
+        }
+        const home = lk.vehicle[s.vehicleId]?.siteId;
+        if (home) {
+          out.push({ ...c, siteId: home, head: 'VEHICLE' });
+          continue;
+        }
+      }
+      out.push({ ...c, head: 'OVERHEAD', toOverhead: true });
+    }
+    return out;
+  });
+}
+
 export function overheadAllocation(db: DB) {
   return memo(db, 'ohAlloc', () => {
     const out: Array<{ month: string; siteId: ID; amount: number }> = [];
-    for (const [mo, rows] of Object.entries(groupBy(db.overheads, (o) => o.month))) {
-      const total = sum(rows, (r) => r.amount);
+    // head-office staff salary joins the month's overhead pool
+    const staffPool: Record<string, number> = {};
+    for (const c of staffRouted(db)) if (c.toOverhead) staffPool[monthOf(c.date)] = (staffPool[monthOf(c.date)] || 0) + c.amount;
+    const months = new Set([...db.overheads.map((o) => o.month), ...Object.keys(staffPool)]);
+    for (const mo of months) {
+      const rows = db.overheads.filter((o) => o.month === mo);
+      const total = sum(rows, (r) => r.amount) + (staffPool[mo] || 0);
       const basis = rows[0]?.basis || db.settings.overheadBasis;
       const active = db.sites.filter((s) => s.status === 'ACTIVE' || db.raBills.some((b) => b.siteId === s.id && monthOf(b.date) === mo));
       let weights: Record<ID, number> = {};
@@ -744,7 +789,9 @@ export function vehicleCost(db: DB, r: Range) {
       const insurance = v.ownership === 'OWNED' ? (insuranceAnnual(v) / 12) * months : 0;
       const hire = sum(hireBills(db).filter((h) => h.vehicleId === v.id && h.month >= monthOf(r.from) && h.month <= monthOf(r.to)), (h) => h.net);
       const emi = v.emi * months;
-      const driver = v.driverSalary * months;
+      // a driver / operator on the staff payroll replaces the flat driver salary on the vehicle
+      const linked = db.staff.filter((s) => s.posting === 'VEHICLE' && s.vehicleId === v.id).map((s) => s.id);
+      const driver = linked.length ? sum(staffDailyCost(db, today()).filter((c) => linked.includes(c.staffId) && inRange(c.date, r)), (c) => c.amount) : v.driverSalary * months;
       const total = fuel + maintenance + spares + tyres + insurance + hire + emi + driver;
       const logs = db.logs.filter((l) => l.vehicleId === v.id && inRange(l.date, r));
       const usage = sum(logs, logUsage);
@@ -898,8 +945,8 @@ export function receivablesAgeing(db: DB) {
 
 /* ================= Site costing (§10.3) ================= */
 
-export const COST_HEADS: CostHead[] = ['MATERIAL', 'LABOUR', 'SUBCONTRACT', 'VEHICLE', 'MISC', 'OVERHEAD'];
-export const COST_HEAD_LABEL: Record<CostHead, string> = { MATERIAL: 'Material', LABOUR: 'Labour', SUBCONTRACT: 'Sub-contract', VEHICLE: 'Vehicles & machines', MISC: 'Miscellaneous', OVERHEAD: 'Overheads' };
+export const COST_HEADS: CostHead[] = ['MATERIAL', 'LABOUR', 'STAFF', 'SUBCONTRACT', 'VEHICLE', 'MISC', 'OVERHEAD'];
+export const COST_HEAD_LABEL: Record<CostHead, string> = { MATERIAL: 'Material', LABOUR: 'Labour', STAFF: 'Staff salary', SUBCONTRACT: 'Sub-contract', VEHICLE: 'Vehicles & machines', MISC: 'Miscellaneous', OVERHEAD: 'Overheads' };
 
 export interface CostEntry {
   date: string;
@@ -940,6 +987,8 @@ export function costEntries(db: DB): CostEntry[] {
       if (excludePending && e.status !== 'APPROVED') continue;
       out.push({ date: e.date, siteId: e.siteId, head: 'MISC', amount: e.amount, source: 'Expenses (EXP-02)' });
     }
+    // salaried staff: site staff → that work (Staff salary); drivers / operators → the vehicle's work that day
+    for (const c of staffRouted(db)) if (c.siteId) out.push({ date: c.date, siteId: c.siteId, head: c.head, amount: c.amount, source: c.head === 'STAFF' ? 'Staff salary (site staff)' : 'Driver / operator salary' });
     for (const o of overheadAllocation(db)) out.push({ date: `${o.month}-15` > today() ? today() : `${o.month}-15`, siteId: o.siteId, head: 'OVERHEAD', amount: o.amount, source: 'HO overhead allocation (EXP-05)' });
     return out;
   });
@@ -966,7 +1015,7 @@ export function siteCostSheet(db: DB, siteId: ID, r?: Range) {
     const billed = billed0 + (r ? 0 : site.openingBilled || 0);
     const received = received0 + (r ? 0 : site.openingReceived || 0);
     const profit = workDone - cost;
-    return { siteId, heads, sources, cost, workDone, billed, received, profit, margin: workDone ? (profit / workDone) * 100 : 0, budget: site.budget, budgetTotal: sum(COST_HEADS, (h) => site.budget[h]) };
+    return { siteId, heads, sources, cost, workDone, billed, received, profit, margin: workDone ? (profit / workDone) * 100 : 0, budget: site.budget, budgetTotal: sum(COST_HEADS, (h) => site.budget[h] || 0) };
   });
 }
 
@@ -1059,6 +1108,8 @@ export function alerts(db: DB): Alert[] {
       const d = daysBetween(today(), c.licenceExpiry!);
       if (d <= 30) out.push({ id: `a3l-${c.id}`, code: 'ALT-03', severity: d < 0 ? 'critical' : 'warning', title: `Labour licence ${d < 0 ? 'expired' : 'expiring'} — ${c.name}`, detail: `${c.licenceNo} · ${d < 0 ? `expired ${-d} days ago` : `expires in ${d} days`}`, link: '/labour/compliance' });
     }
+    // salaried drivers and operators: driving licence 30 days before expiry
+    for (const x of licenceAlerts(db, today())) out.push({ id: `a3d-${x.staff.id}`, code: 'ALT-03', severity: x.daysLeft < 0 ? 'critical' : x.daysLeft <= 7 ? 'serious' : 'warning', title: `Driving licence ${x.daysLeft < 0 ? 'expired' : 'expiring'} — ${x.staff.name} (${x.staff.designation})`, detail: `${x.staff.licenceNo || 'licence'} · ${x.daysLeft < 0 ? `expired ${-x.daysLeft} days ago` : `expires in ${x.daysLeft} days`}`, link: '/staff/reports' });
     // ALT-04 pending approvals > 24h
     const old = pendingApprovals(db).filter((a) => Date.now() - new Date(a.createdAt).getTime() > 86400000);
     if (old.length) out.push({ id: 'a4', code: 'ALT-04', severity: 'serious', title: `${old.length} approvals pending for more than 24 hours`, detail: old.slice(0, 3).map((a) => a.title).join(' · '), link: '/approvals' });

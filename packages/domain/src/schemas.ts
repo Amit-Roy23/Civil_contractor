@@ -18,7 +18,7 @@ const pct = num.min(0).max(100);
 const rec = (v: z.ZodTypeAny) => z.record(z.string().max(64), v);
 const status = z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'SENT_BACK', 'CANCELLED']);
 const payMode = z.enum(['BANK', 'CHEQUE', 'UPI', 'CASH']);
-const costHeads = z.object({ MATERIAL: num, LABOUR: num, SUBCONTRACT: num, VEHICLE: num, MISC: num, OVERHEAD: num });
+const costHeads = z.object({ MATERIAL: num, LABOUR: num, STAFF: num.default(0), SUBCONTRACT: num, VEHICLE: num, MISC: num, OVERHEAD: num });
 
 const base = {
   id,
@@ -116,6 +116,34 @@ export const schemas: Record<CollectionKey, z.ZodTypeAny> = {
     fatherName: s(120).optional(), gender: z.enum(['M', 'F', 'O']).optional(), dob: z.union([date, z.literal('')]).optional(), address: s(300).optional(),
     bankAccount: z.string().regex(/^(|[0-9]{6,20})$/, 'bank account: 6–20 digits').optional(), ifsc: z.string().regex(/^(|[A-Z]{4}0[A-Z0-9]{6})$/, 'IFSC looks like SBIN0001234').optional(),
     uan: z.string().regex(/^(|[0-9]{12})$/, 'UAN is 12 digits').optional(), pfMember: z.boolean().optional(), esiMember: z.boolean().optional(), esicNo: s(17).optional(), leftOn: z.union([date, z.literal('')]).optional(),
+  }),
+  staff: z.object({
+    ...base, code: s(30), name: s(200), fatherName: s(120).default(''), phone: s(20).default(''),
+    aadhaar: z.string().regex(/^(|XXXX-XXXX-\d{4})$/, 'Aadhaar must be stored masked').default(''),
+    pan: z.string().regex(/^(|[A-Z]{5}[0-9]{4}[A-Z])$/, 'PAN looks like ABCDE1234F').default(''), address: s(300).default(''),
+    designation: s(60), joiningDate: z.union([date, z.literal('')]).default(''), leftOn: z.union([date, z.literal('')]).optional(),
+    basis: z.enum(['MONTHLY', 'PER_DAY', 'PER_TRIP']).default('MONTHLY'), salary: nn,
+    allowances: z.object({ food: nn.default(0), mobile: nn.default(0), travel: nn.default(0) }).default({}), otRate: nn.default(0),
+    posting: z.enum(['HEAD_OFFICE', 'SITE', 'VEHICLE', 'PLANT']).default('HEAD_OFFICE'), siteId: optId, vehicleId: optId, plantId: optId,
+    payMode: z.enum(['CASH', 'BANK', 'UPI']).default('CASH'),
+    bankAccount: z.string().regex(/^(|[0-9]{6,20})$/, 'bank account: 6–20 digits').default(''), ifsc: z.string().regex(/^(|[A-Z]{4}0[A-Z0-9]{6})$/, 'IFSC looks like SBIN0001234').default(''), upi: s(100).default(''),
+    pfMember: z.boolean().default(false), uan: z.string().regex(/^(|[0-9]{12})$/, 'UAN is 12 digits').default(''), esiMember: z.boolean().default(false), esicNo: s(17).default(''),
+    licenceNo: s(40).default(''), licenceExpiry: z.union([date, z.literal('')]).optional(), photos: z.number().int().min(0).max(10).optional(), idDocs: z.number().int().min(0).max(10).optional(),
+  }),
+  staffAttendance: z.object({ ...base, staffId: id, date, status: z.enum(['P', 'A', 'H', 'L', 'HO']), otHours: nn.max(16).default(0), remark: s(200).default('') }),
+  staffAdvances: z.object({
+    ...base, no: s(60), staffId: id, date, kind: z.enum(['ADVANCE', 'LOAN']).default('ADVANCE'), amount: nn, instalment: nn.default(0),
+    mode: z.enum(['CASH', 'BANK', 'UPI']).default('CASH'), ref: s(100).default(''), remark: s(300).default(''),
+  }),
+  salaryRuns: z.object({
+    ...base, no: s(60), month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'month is YYYY-MM'),
+    lines: z.array(z.object({
+      staffId: id, basis: z.enum(['MONTHLY', 'PER_DAY', 'PER_TRIP']), rate: nn, daysInMonth: z.number().int(), present: nn, half: nn, leave: nn, holiday: nn, absent: nn, unmarked: nn,
+      paidDays: nn, trips: nn, basic: nn, allowances: nn, otHours: nn, ot: nn, gross: nn, pf: nn, esi: nn, advance: nn, loan: nn, other: nn, otherNote: s(200).default(''),
+      recoveries: z.array(z.object({ advanceId: id, amount: nn })).max(50), net: num,
+    })).max(2000),
+    status: z.enum(['DRAFT', 'APPROVED', 'CANCELLED']), approvedOn: optDate.optional(),
+    payments: z.array(z.object({ staffId: id, date, amount: nn, mode: z.enum(['CASH', 'BANK', 'UPI']), ref: s(100).default('') })).max(5000).default([]),
   }),
   vehicles: z.object({
     ...base, code: s(30), regNo: s(40), type: z.enum(['Tipper', 'Transit Mixer', 'JCB', 'Excavator', 'Roller', 'Paver', 'Grader', 'Tanker', 'Car', 'Generator', 'Loader', 'Paver Finisher', 'Compactor', 'Mobile Hot Mix', 'Bitumen Sprayer', 'Sweeper', 'Road Cleaner', 'Marking Machine', 'Concrete Mixer', 'Tractor', 'Other']),
@@ -307,6 +335,7 @@ export const settingsSchema = z.object({
   }),
   tally: z.object({ company: s(200), ledgers: rec(s(200)) }),
   minWages: rec(nn),
+  staff: z.object({ weeklyOff: z.number().int().min(-1).max(6), leavePaid: z.boolean(), designations: z.array(s(60)).max(60).optional() }),
 }).partial();
 
 export const companySchema = z.object({

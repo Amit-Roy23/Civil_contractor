@@ -1,7 +1,8 @@
 import type { DB, ID, Loan, Production, SalesInvoice, Site } from './types.js';
 import { availability, getLedger, productionUse } from './ledger.js';
 import { gstSplit } from './billing.js';
-import { addDays, daysBetween, monthOf } from './format.js';
+import { addDays, daysBetween, monthOf, today } from './format.js';
+import { plantStaffCost } from './staffpay.js';
 import { round, sum } from './utils.js';
 import { addMonths, currentCompletion } from './works.js';
 
@@ -115,7 +116,8 @@ export function costPerMt(db: DB, plantId: ID, month: string) {
   const prods = db.production.filter((p) => p.plantId === plantId && monthOf(p.date) === month);
   const totalQty = sum(prods, (p) => p.qty);
   const pc = db.plantCosts.find((c) => c.plantId === plantId && c.month === month);
-  const fixed = pc ? { labour: pc.labour, power: pc.power, repairs: pc.maintenance + pc.machinery, depreciation: pc.depreciation || 0, interest: pc.interest || 0, overhead: pc.overhead } : { labour: 0, power: 0, repairs: 0, depreciation: 0, interest: 0, overhead: 0 };
+  const staffPay = plantStaffCost(db, plantId, month, today());
+  const fixed = pc ? { labour: pc.labour + staffPay, power: pc.power, repairs: pc.maintenance + pc.machinery, depreciation: pc.depreciation || 0, interest: pc.interest || 0, overhead: pc.overhead } : { labour: staffPay, power: 0, repairs: 0, depreciation: 0, interest: 0, overhead: 0 };
   const plant = db.plants.find((p) => p.id === plantId);
   const fuelIds = new Set([plant?.burnerFuelId, plant?.dgFuelId].filter(Boolean));
   const byProduct = new Map<ID, { qty: number; material: number; fuel: number }>();

@@ -1,5 +1,6 @@
 import type { DB, ID, Production, StockTxn } from './types.js';
-import { monthOf } from './format.js';
+import { monthOf, today } from './format.js';
+import { plantStaffCost } from './staffpay.js';
 import { round } from './utils.js';
 
 /**
@@ -303,7 +304,9 @@ function plantUnitCosts(db: DB, movs: Movement[]): PlantUnitCost[] {
     const fuelRate = plant.type === 'HOT_MIX' ? FUEL_RATE.FO : FUEL_RATE.HSD;
     const running =
       prods.reduce((s, p) => s + p.fuelUsed * fuelRate + p.dgUnits * POWER_RATE, 0) +
-      (pc ? pc.labour + pc.power + pc.machinery + pc.maintenance + pc.overhead : 0);
+      (pc ? pc.labour + pc.power + pc.machinery + pc.maintenance + pc.overhead : 0) +
+      // plant staff on the salaried payroll (operators, plant helpers) are part of the plant's running cost
+      plantStaffCost(db, plantId, month, today());
     const byProduct = new Map<string, { qty: number; rm: number }>();
     let totalQty = 0;
     for (const p of prods) {

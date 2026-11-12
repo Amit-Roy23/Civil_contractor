@@ -371,6 +371,106 @@ export interface Worker extends Base {
   leftOn?: string;
 }
 
+/* ---------------- Salaried staff (monthly payroll, kept apart from daily-wage labour) ---------------- */
+
+export type StaffBasis = 'MONTHLY' | 'PER_DAY' | 'PER_TRIP';
+export type StaffPosting = 'HEAD_OFFICE' | 'SITE' | 'VEHICLE' | 'PLANT';
+export const STAFF_ROLES = ['Driver', 'Machine Operator', 'Plant Operator', 'Site Engineer', 'Supervisor', 'Munshi', 'Storekeeper', 'Accountant', 'Office Staff', 'Helper (monthly)', 'Watchman', 'Mechanic'] as const;
+
+export interface Staff extends Base {
+  code: string;
+  name: string;
+  fatherName: string;
+  phone: string;
+  aadhaar: string; // stored masked: last 4 digits only
+  pan: string;
+  address: string;
+  designation: string;
+  joiningDate: string;
+  leftOn?: string;
+  /** MONTHLY: salary per month · PER_DAY: rate per paid day · PER_TRIP: rate per trip of the linked vehicle */
+  basis: StaffBasis;
+  salary: number;
+  allowances: { food: number; mobile: number; travel: number };
+  otRate: number;
+  posting: StaffPosting;
+  siteId?: ID;
+  vehicleId?: ID;
+  plantId?: ID;
+  payMode: 'CASH' | 'BANK' | 'UPI';
+  bankAccount: string;
+  ifsc: string;
+  upi: string;
+  pfMember: boolean;
+  uan: string;
+  esiMember: boolean;
+  esicNo: string;
+  licenceNo: string;
+  licenceExpiry?: string;
+  photos?: number;
+  idDocs?: number;
+}
+
+/** P present · A absent · H half day · L leave · HO holiday */
+export type StaffAttStatus = 'P' | 'A' | 'H' | 'L' | 'HO';
+export interface StaffAttendance extends Base {
+  staffId: ID;
+  date: string;
+  status: StaffAttStatus;
+  otHours: number;
+  remark: string;
+}
+
+/** a salary advance (recovered in full from the next salary) or a loan (recovered by instalments) */
+export interface StaffAdvance extends Base {
+  no: string;
+  staffId: ID;
+  date: string;
+  kind: 'ADVANCE' | 'LOAN';
+  amount: number;
+  /** per salary; 0 = the whole balance from the next salary */
+  instalment: number;
+  mode: 'CASH' | 'BANK' | 'UPI';
+  ref: string;
+  remark: string;
+}
+
+export interface SalaryLine {
+  staffId: ID;
+  basis: StaffBasis;
+  rate: number;
+  daysInMonth: number;
+  present: number;
+  half: number;
+  leave: number;
+  holiday: number;
+  absent: number;
+  unmarked: number;
+  paidDays: number;
+  trips: number;
+  basic: number;
+  allowances: number;
+  otHours: number;
+  ot: number;
+  gross: number;
+  pf: number;
+  esi: number;
+  advance: number;
+  loan: number;
+  other: number;
+  otherNote: string;
+  recoveries: Array<{ advanceId: ID; amount: number }>;
+  net: number;
+}
+export interface SalaryRun extends Base {
+  no: string;
+  month: string;
+  lines: SalaryLine[];
+  status: 'DRAFT' | 'APPROVED' | 'CANCELLED';
+  approvedOn?: string;
+  payments: Array<{ staffId: ID; date: string; amount: number; mode: 'CASH' | 'BANK' | 'UPI'; ref: string }>;
+}
+
 export type VehicleType =
   | 'Tipper'
   | 'Transit Mixer'
@@ -1072,6 +1172,7 @@ export type ModuleKey =
   | 'inventory'
   | 'purchase'
   | 'labour'
+  | 'staff'
   | 'expenses'
   | 'fleet'
   | 'plant'
@@ -1125,6 +1226,8 @@ export interface Settings {
   tally?: { company: string; ledgers: Record<string, string> };
   /** LAB-05: minimum wage per day by trade */
   minWages?: Record<string, number>;
+  /** salaried staff: the weekly off (0 = Sunday, -1 = none) is a paid holiday when not marked; leave is paid or not */
+  staff?: { weeklyOff: number; leavePaid: boolean; designations?: string[] };
 }
 
 export interface AuditEntry {
@@ -1152,7 +1255,7 @@ export interface Notification {
   userId?: ID;
 }
 
-export type CostHead = 'MATERIAL' | 'LABOUR' | 'SUBCONTRACT' | 'VEHICLE' | 'MISC' | 'OVERHEAD';
+export type CostHead = 'MATERIAL' | 'LABOUR' | 'STAFF' | 'SUBCONTRACT' | 'VEHICLE' | 'MISC' | 'OVERHEAD';
 
 export interface DB {
   version: number;
@@ -1167,6 +1270,10 @@ export interface DB {
   clients: Client[];
   subcons: SubContractor[];
   workers: Worker[];
+  staff: Staff[];
+  staffAttendance: StaffAttendance[];
+  staffAdvances: StaffAdvance[];
+  salaryRuns: SalaryRun[];
   vehicles: Vehicle[];
   fuelSources: FuelSource[];
   expenseHeads: ExpenseHead[];

@@ -82,7 +82,7 @@ export function buildMasters(T: string) {
     (Object.keys(r) as CostHead[]).forEach((k) => (out[k] = Math.round((cv * r[k]!) / 1000) * 1000));
     return out;
   };
-  const zeroCost = (): Record<CostHead, number> => ({ MATERIAL: 0, LABOUR: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEAD: 0 });
+  const zeroCost = (): Record<CostHead, number> => ({ MATERIAL: 0, LABOUR: 0, STAFF: 0, SUBCONTRACT: 0, VEHICLE: 0, MISC: 0, OVERHEAD: 0 });
   const sites: Site[] = [
     {
       ...base('s1', created), code: 'NH27-NGN', short: 'NH-27 Nagaon', name: 'NH-27 Four-Laning, Nagaon Bypass Pkg-II', clientId: 'c1',
@@ -400,11 +400,11 @@ export function buildMasters(T: string) {
   const v: Perm[] = ['view'];
   const va: Perm[] = ['view', 'add'];
   const vae: Perm[] = ['view', 'add', 'edit'];
-  const mods: ModuleKey[] = ['dashboard', 'masters', 'inventory', 'purchase', 'labour', 'expenses', 'fleet', 'plant', 'contract', 'reports', 'approvals', 'alerts', 'admin'];
+  const mods: ModuleKey[] = ['dashboard', 'masters', 'inventory', 'purchase', 'labour', 'staff', 'expenses', 'fleet', 'plant', 'contract', 'reports', 'approvals', 'alerts', 'admin'];
   const permsFor = (m: Partial<Record<ModuleKey, Perm[]>>) => Object.fromEntries(mods.map((k) => [k, m[k] || []])) as Record<ModuleKey, Perm[]>;
   const roles: Role[] = [
     { id: 'owner', name: 'Owner / Admin', description: 'Full access to every site, rates and approvals', perms: permsFor(Object.fromEntries(mods.map((k) => [k, all]))), ratesVisible: true, allSites: true, approvalLimit: Infinity },
-    { id: 'accountant', name: 'Accountant', description: 'Purchases, payments, bills and ledgers across all sites', perms: permsFor({ dashboard: v, masters: vae, inventory: v, purchase: all, labour: [...vae, 'approve'], expenses: all, fleet: v, plant: v, contract: all, reports: v, approvals: ['view', 'approve'], alerts: v }), ratesVisible: true, allSites: true, approvalLimit: 500000 },
+    { id: 'accountant', name: 'Accountant', description: 'Purchases, payments, bills and ledgers across all sites', perms: permsFor({ dashboard: v, masters: vae, inventory: v, purchase: all, labour: [...vae, 'approve'], staff: [...vae, 'approve'], expenses: all, fleet: v, plant: v, contract: all, reports: v, approvals: ['view', 'approve'], alerts: v }), ratesVisible: true, allSites: true, approvalLimit: 500000 },
     { id: 'store', name: 'Store Keeper', description: 'Central store receipts and issues', perms: permsFor({ dashboard: v, masters: v, inventory: [...vae, 'approve'], purchase: vae, reports: v, approvals: ['view', 'approve'], alerts: v }), ratesVisible: false, allSites: false, approvalLimit: 150000 },
     { id: 'engineer', name: 'Site Engineer', description: 'Site receipts, consumption, attendance and expenses for assigned sites', perms: permsFor({ dashboard: v, masters: v, inventory: vae, purchase: va, labour: vae, expenses: vae, fleet: vae, contract: vae, reports: v, approvals: ['view', 'approve'], alerts: v }), ratesVisible: false, allSites: false, approvalLimit: 5000 },
     { id: 'plant', name: 'Plant In-charge', description: 'Plant raw material, production and dispatch', perms: permsFor({ dashboard: v, masters: v, inventory: va, purchase: va, plant: [...vae, 'approve'], fleet: va, reports: v, approvals: ['view', 'approve'], alerts: v }), ratesVisible: false, allSites: false, approvalLimit: 50000 },
@@ -434,6 +434,7 @@ export function buildMasters(T: string) {
     sessionTimeoutMin: 30,
     notify: { sms: false, whatsapp: true, email: true },
     overheadBasis: 'CONTRACT',
+    staff: { weeklyOff: 0, leavePaid: true },
   };
 
   return { clients, sites, plants, stores, units, materials, recipes, boq, suppliers, subcons, workers, vehicles, fuelSources, expenseHeads, roles, users, settings };
