@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CircleCheck, DatabaseBackup, Eye, EyeOff, Lock, ShieldCheck, UserPlus } from 'lucide-react';
+import { CircleCheck, DatabaseBackup, Eye, EyeOff, IdCard, Lock, ShieldCheck, UserPlus } from 'lucide-react';
 import { useDB, insert, update, updateSettings, journalSize } from '../../data/store';
 import { API_MODE, api } from '../../data/api';
 import { useSession } from '../../data/session';
-import type { AuditEntry, ModuleKey, Perm, Role, Settings, User } from '../../data/types';
+import { STAFF_ROLES, type AuditEntry, type ModuleKey, type Perm, type Role, type Settings, type User } from '../../data/types';
 import { Badge, Button, Callout, Card, CardHeader, Drawer, PageHeader, Section, toast } from '../../components/ui/core';
 import { DataTable } from '../../components/ui/DataTable';
-import { Field, Input, NumberInput, Segmented, Select, Toggle } from '../../components/ui/fields';
+import { Field, Input, NumberInput, Segmented, Select, Textarea, Toggle } from '../../components/ui/fields';
 import { dateTime, fyCode, today } from '../../lib/format';
 import { cn, initials } from '../../lib/utils';
 import { useModuleTab, useNames } from '../shared';
@@ -133,7 +133,7 @@ function UserForm({ user, onClose }: { user: Partial<User>; onClose: () => void 
 }
 
 /* ================= Roles & permission matrix ================= */
-const MODS: Array<[ModuleKey, string]> = [['dashboard', 'Dashboard'], ['masters', 'Masters'], ['inventory', 'Site inventory'], ['purchase', 'Store & purchase'], ['labour', 'Labour'], ['expenses', 'Expenses'], ['fleet', 'Vehicles'], ['plant', 'Plants'], ['contract', 'Contracts & billing'], ['reports', 'Reports'], ['approvals', 'Approvals'], ['alerts', 'Alerts'], ['admin', 'Administration']];
+const MODS: Array<[ModuleKey, string]> = [['dashboard', 'Dashboard'], ['masters', 'Masters'], ['inventory', 'Site inventory'], ['purchase', 'Store & purchase'], ['labour', 'Labour'], ['staff', 'Staff & salaries'], ['expenses', 'Expenses'], ['fleet', 'Vehicles'], ['plant', 'Plants'], ['contract', 'Contracts & billing'], ['reports', 'Reports'], ['approvals', 'Approvals'], ['alerts', 'Alerts'], ['admin', 'Administration']];
 const PERMS: Perm[] = ['view', 'add', 'edit', 'delete', 'approve'];
 
 function RolesTab() {
@@ -269,8 +269,11 @@ function SettingsTab() {
   const s = useSession();
   const [v, setV] = useState<Settings>(db.settings);
   const set = <K extends keyof Settings>(k: K, x: Settings[K]) => setV({ ...v, [k]: x });
+  const [desig, setDesig] = useState(() => (db.settings.staff?.designations?.length ? db.settings.staff.designations : [...STAFF_ROLES]).join('\n'));
   const save = () => {
-    updateSettings(v, 'Settings updated');
+    const list = [...new Set(desig.split('\n').map((x) => x.trim()).filter(Boolean))].slice(0, 60);
+    const same = list.join('|') === STAFF_ROLES.join('|');
+    updateSettings({ ...v, staff: { weeklyOff: v.staff?.weeklyOff ?? 0, leavePaid: v.staff?.leavePaid ?? true, ...(same ? {} : { designations: list }) } }, 'Settings updated');
     toast.success('Settings saved', 'Rules apply to all new entries');
   };
   const N = (x: number | '') => (x === '' ? 0 : Number(x));
@@ -298,6 +301,18 @@ function SettingsTab() {
             <Field label="Attendance locks next day at" hint="24-hour clock"><NumberInput value={v.attendanceLockHour} onChange={(x) => set('attendanceLockHour', N(x))} suffix=":00" /></Field>
             <Field label="Session timeout"><NumberInput value={v.sessionTimeoutMin} onChange={(x) => set('sessionTimeoutMin', N(x))} suffix="min" /></Field>
             <div className="col-span-2"><Toggle checked={v.allowNegativeOverride} onChange={(x) => set('allowNegativeOverride', x)} label="Allow Admin to override negative stock block" hint="the system always warns" /></div>
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Salaried staff" subtitle="how the monthly salary counts days" icon={<IdCard className="w-[18px] h-[18px]" />} />
+          <div className="px-5 pb-5 space-y-4">
+            <Field label="Weekly off (paid)" hint="An unmarked weekly-off day is paid; a working day left unmarked is not">
+              <Select value={String(v.staff?.weeklyOff ?? 0)} onChange={(x) => set('staff', { weeklyOff: Number(x), leavePaid: v.staff?.leavePaid ?? true, designations: v.staff?.designations })} options={[{ value: '-1', label: 'No weekly off' }, ...['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => ({ value: String(i), label: d }))]} />
+            </Field>
+            <Toggle checked={v.staff?.leavePaid ?? true} onChange={(x) => set('staff', { weeklyOff: v.staff?.weeklyOff ?? 0, leavePaid: x, designations: v.staff?.designations })} label="Leave is paid" hint="Off: a day marked Leave is not paid" />
+            <Field label="Designations" hint="One per line — the list in the staff form">
+              <Textarea rows={6} value={desig} onChange={(e) => setDesig(e.target.value)} />
+            </Field>
           </div>
         </Card>
         <Card>

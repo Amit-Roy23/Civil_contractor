@@ -7,6 +7,7 @@ import {
   Factory,
   FileSpreadsheet,
   HardHat,
+  IdCard,
   LayoutDashboard,
   Receipt,
   Settings,
@@ -81,6 +82,16 @@ export const NAV: NavModule[] = [
     ],
   },
   {
+    key: 'staff', path: '/staff', label: 'Staff & Payroll', short: 'Staff', icon: IdCard, group: 'Operations',
+    tabs: [
+      { key: 'list', label: 'Staff', hint: 'Drivers, operators and office staff on salary' },
+      { key: 'attendance', label: 'Attendance', hint: 'Daily, separate from labour' },
+      { key: 'payroll', label: 'Monthly salary', hint: 'Salary sheet, approval, payments, slips' },
+      { key: 'advances', label: 'Advances & loans' },
+      { key: 'reports', label: 'Reports' },
+    ],
+  },
+  {
     key: 'expenses', path: '/expenses', label: 'Expenses & Petty Cash', short: 'Expenses', icon: Receipt, group: 'Operations',
     tabs: [
       { key: 'entries', label: 'Expenses' },
@@ -150,6 +161,7 @@ export const NAV: NavModule[] = [
       { key: 'suppliers', label: 'Suppliers' },
       { key: 'subcons', label: 'Contractors' },
       { key: 'workers', label: 'Workers' },
+      { key: 'staff', label: 'Staff (salaried)' },
       { key: 'vehicles', label: 'Vehicles' },
       { key: 'stores', label: 'Stores' },
       { key: 'plants', label: 'Plants' },

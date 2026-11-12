@@ -1,4 +1,4 @@
-import type { CollectionKey, DB } from './types.js';
+import type { CollectionKey, DB, ModuleKey } from './types.js';
 import { schemas, zodMessage } from './schemas.js';
 import { WORK_STAGES, clientDeductions } from './works.js';
 import { excelDate, type Cell } from './xlsx.js';
@@ -50,6 +50,8 @@ export interface ImportTemplate {
   /** turn checked rows into commands; default: one insert per row */
   toOps?: (db: DB, rows: Array<{ row: number; rec: Record<string, any> }>, errors: ImportError[]) => ImportOp[];
   adminOnly?: boolean;
+  /** shown and imported only by roles with this module (salaries: owner and accountant) */
+  module?: ModuleKey;
 }
 
 /* ---------------- helpers ---------------- */
@@ -292,6 +294,47 @@ export const TEMPLATES: ImportTemplate[] = [
       { header: 'ESIC IP no.', key: 'esicNo' },
     ],
     rows: (db) => db.workers,
+  },
+  {
+    id: 'staff',
+    title: 'Salaried staff',
+    coll: 'staff',
+    module: 'staff',
+    description: 'Drivers, operators and office staff on monthly salary. Leave Staff ID blank for the next number (STF-001 …). Aadhaar is stored masked.',
+    unique: 'code',
+    defaults: { basis: 'MONTHLY', posting: 'HEAD_OFFICE', payMode: 'CASH', code: '' },
+    columns: [
+      { header: 'Staff ID', key: 'code', hint: 'Blank = next number' },
+      { header: 'Name', key: 'name', required: true },
+      { header: "Father's name", key: 'fatherName' },
+      { header: 'Phone', key: 'phone' },
+      { header: 'Aadhaar', key: 'aadhaar', hint: 'Only the last 4 digits are kept' },
+      { header: 'PAN', key: 'pan' },
+      { header: 'Address', key: 'address' },
+      { header: 'Designation', key: 'designation', required: true, example: 'Driver' },
+      { header: 'Joining date', key: 'joiningDate', type: 'date' },
+      { header: 'Salary basis', key: 'basis', type: 'enum', options: opts(['MONTHLY', 'Monthly'], ['PER_DAY', 'Per day'], ['PER_TRIP', 'Per trip']) },
+      { header: 'Salary / rate', key: 'salary', type: 'number', required: true, hint: 'per month, per day or per trip' },
+      { header: 'Food / batta allowance', key: 'allowances.food', type: 'number' },
+      { header: 'Mobile allowance', key: 'allowances.mobile', type: 'number' },
+      { header: 'Travel allowance', key: 'allowances.travel', type: 'number' },
+      { header: 'OT rate per hour', key: 'otRate', type: 'number' },
+      { header: 'Posting', key: 'posting', type: 'enum', options: opts(['HEAD_OFFICE', 'Head office'], ['SITE', 'Site'], ['VEHICLE', 'Vehicle'], ['PLANT', 'Plant']) },
+      { header: 'Work', key: 'siteId', ...ref('sites', ['code', 'short', 'name'], 'short') },
+      { header: 'Vehicle', key: 'vehicleId', ...ref('vehicles', ['regNo', 'code'], 'regNo') },
+      { header: 'Plant', key: 'plantId', ...ref('plants', ['code', 'name'], 'name') },
+      { header: 'Payment mode', key: 'payMode', type: 'enum', options: opts(['CASH', 'Cash'], ['BANK', 'Bank'], ['UPI', 'UPI']) },
+      { header: 'Bank account no.', key: 'bankAccount' },
+      { header: 'IFSC', key: 'ifsc' },
+      { header: 'UPI', key: 'upi' },
+      { header: 'EPF member', key: 'pfMember', type: 'bool' },
+      { header: 'UAN', key: 'uan', hint: '12 digits' },
+      { header: 'ESI member', key: 'esiMember', type: 'bool' },
+      { header: 'ESIC IP no.', key: 'esicNo' },
+      { header: 'Driving licence no.', key: 'licenceNo' },
+      { header: 'Licence expiry', key: 'licenceExpiry', type: 'date' },
+    ],
+    rows: (db) => db.staff,
   },
   {
     // FLT-03: daily km / engine hours / fuel from the Tata Fleet Edge "trip summary" export
@@ -622,7 +665,8 @@ export function checkImport(db: DB, t: ImportTemplate, sheet: Cell[][]): ImportR
       if (!o) err(t.columns.find((c) => c.type === 'office')!, `"${officeRaw}" is not an office of ${client?.name || 'this client'}`);
       else rec.officeId = o.id;
     }
-    if (t.coll === 'workers' && typeof rec.aadhaar === 'string' && rec.aadhaar) {
+    if (t.coll === 'staff') for (const k of ['pan', 'ifsc'] as const) if (typeof rec[k] === 'string') rec[k] = rec[k].toUpperCase();
+    if ((t.coll === 'workers' || t.coll === 'staff') && typeof rec.aadhaar === 'string' && rec.aadhaar) {
       const d = rec.aadhaar.replace(/\D/g, '');
       rec.aadhaar = d.length >= 4 ? `XXXX-XXXX-${d.slice(-4)}` : '';
     }

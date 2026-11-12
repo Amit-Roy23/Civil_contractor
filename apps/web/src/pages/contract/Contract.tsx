@@ -144,7 +144,7 @@ function SiteSheet({ siteId, picker }: { siteId: string; picker: React.ReactNode
                 <div key={h} className="flex items-center justify-between px-3 py-2.5">
                   <div>
                     <div className="text-sm font-medium">{COST_HEAD_LABEL[h]}</div>
-                    <div className="text-[11px] text-muted">{({ MATERIAL: 'Site consumption, plant receipts', LABOUR: 'Attendance & wages, labour contractor bills', SUBCONTRACT: 'Sub-contractor bills', VEHICLE: 'Fuel, hire bills (HIRE-02), internal rate, maintenance', MISC: 'Expenses', OVERHEAD: 'Allocation' } as Record<CostHead, string>)[h]}</div>
+                    <div className="text-[11px] text-muted">{({ MATERIAL: 'Site consumption, plant receipts', LABOUR: 'Attendance & wages, labour contractor bills', STAFF: 'Salaried staff posted to the work', SUBCONTRACT: 'Sub-contractor bills', VEHICLE: 'Fuel, hire bills (HIRE-02), internal rate, maintenance', MISC: 'Expenses', OVERHEAD: 'Allocation' } as Record<CostHead, string>)[h]}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-semibold num">{inr(cs.heads[h])}</div>
@@ -208,12 +208,12 @@ function BudgetTabBody() {
       <Card>
         <CardHeader title="Budget vs actual by cost head" />
         <div className="px-4 pb-4">
-          <ColumnChart data={COST_HEADS.map((h) => ({ label: COST_HEAD_LABEL[h].split(' ')[0]!, values: { budget: st.budget[h], actual: cs.heads[h] } }))} series={[{ key: 'budget', label: 'Budget' }, { key: 'actual', label: 'Actual to date' }]} format={inrCompact} height={220} />
+          <ColumnChart data={COST_HEADS.map((h) => ({ label: COST_HEAD_LABEL[h].split(' ')[0]!, values: { budget: st.budget[h] || 0, actual: cs.heads[h] } }))} series={[{ key: 'budget', label: 'Budget' }, { key: 'actual', label: 'Actual to date' }]} format={inrCompact} height={220} />
         </div>
       </Card>
       <DataTable
         title={`Budget vs actual — ${st.short}`}
-        rows={COST_HEADS.map((h) => ({ h, budget: st.budget[h], actual: cs.heads[h] }))}
+        rows={COST_HEADS.map((h) => ({ h, budget: st.budget[h] || 0, actual: cs.heads[h] }))}
         rowKey={(r) => r.h}
         searchable={false}
         columns={[

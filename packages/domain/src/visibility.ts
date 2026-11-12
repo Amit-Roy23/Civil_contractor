@@ -83,6 +83,12 @@ export function recordInScope(db: DB, s: Session, coll: CollectionKey, r: any): 
     case 'loans':
     case 'subsidyClaims':
       return s.allSites && s.showRates;
+    // salaried staff: only roles with the Staff permission (owner and accountant by default) see salaries
+    case 'staff':
+    case 'staffAttendance':
+    case 'staffAdvances':
+    case 'salaryRuns':
+      return s.can('staff', 'view');
     case 'notifications':
       return !r.userId || r.userId === s.user.id;
     case 'audit':

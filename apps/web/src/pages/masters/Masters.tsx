@@ -14,6 +14,7 @@ import { templateById } from '@civil/domain/imports';
 import { tdsSections } from '@civil/domain/billing';
 import { ClientForm, FirmsTab, WorksTab } from './WorkForm';
 import { ImportDialog, ImportExportTab, exportTemplate } from './ImportExport';
+import { StaffListTab } from '../staff/Staff';
 
 type FType = 'text' | 'number' | 'money' | 'date' | 'select' | 'textarea' | 'toggle' | 'pct';
 interface FieldDef {
@@ -253,7 +254,7 @@ export default function Masters() {
     <div>
       <PageHeader title="Masters" subtitle="Entered once and reused everywhere — add, edit, deactivate (never delete once used), Excel import and export." />
       {tabsEl}
-      {tab === 'sites' ? <WorksTab /> : tab === 'firms' || tab === 'company' ? <FirmsTab /> : tab === 'import' ? <ImportExportTab /> : tab === 'recipes' ? <RecipesTab /> : MASTERS[tab] ? <MasterTab key={tab} def={MASTERS[tab]!} /> : null}
+      {tab === 'sites' ? <WorksTab /> : tab === 'firms' || tab === 'company' ? <FirmsTab /> : tab === 'import' ? <ImportExportTab /> : tab === 'recipes' ? <RecipesTab /> : tab === 'staff' ? <StaffListTab /> : MASTERS[tab] ? <MasterTab key={tab} def={MASTERS[tab]!} /> : null}
     </div>
   );
 }

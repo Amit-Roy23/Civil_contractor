@@ -126,7 +126,7 @@ export function ImportExportTab() {
   const s = useSession();
   const [open, setOpen] = useState<ImportTemplate | null>(null);
   const exportAll = () => {
-    download(TEMPLATES.filter((t) => !t.adminOnly || s.isAdmin).map((t) => exportSheet(db, t)), `WCM masters - ${today()}.xlsx`);
+    download(TEMPLATES.filter((t) => (!t.adminOnly || s.isAdmin) && (!t.module || s.can(t.module))).map((t) => exportSheet(db, t)), `WCM masters - ${today()}.xlsx`);
   };
   return (
     <>
@@ -137,8 +137,8 @@ export function ImportExportTab() {
         <Button icon={<FileSpreadsheet className="w-4 h-4" />} onClick={exportAll}>Export all masters</Button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 stagger">
-        {TEMPLATES.map((t) => {
-          const locked = (t.adminOnly && !s.isAdmin) || !s.can('masters', 'add');
+        {TEMPLATES.filter((t) => !t.module || s.can(t.module)).map((t) => {
+          const locked = (t.adminOnly && !s.isAdmin) || !s.can(t.module || 'masters', 'add');
           const count = (t.rows ? t.rows(db) : (db[t.coll] as any[])).length;
           return (
             <Card key={t.id} className="p-4 flex flex-col">

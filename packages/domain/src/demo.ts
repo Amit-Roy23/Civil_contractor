@@ -13,7 +13,7 @@ export function buildDemoDB(today: string): DB {
     const win = siteCostSheet(d, s.id, { from: '0000-01-01', to: '9999-12-31' });
     const desired = win.workDone * (target[s.id] ?? 0.9);
     const gap = Math.max(0, desired - win.cost);
-    const mix: Record<CostHead, number> = { MATERIAL: 0.5, LABOUR: 0.13, SUBCONTRACT: 0.08, VEHICLE: 0.18, MISC: 0.05, OVERHEAD: 0.06 };
+    const mix: Record<CostHead, number> = { MATERIAL: 0.5, LABOUR: 0.13, STAFF: 0, SUBCONTRACT: 0.08, VEHICLE: 0.18, MISC: 0.05, OVERHEAD: 0.06 };
     COST_HEADS.forEach((h) => (s.openingCost[h] = Math.round(gap * mix[h])));
   }
   return d;
@@ -26,6 +26,6 @@ export function emptyDB(company: DB['company'], settings: DB['settings'], roles:
     sites: [], stores: [], plants: [], materials: [], suppliers: [], clients: [], subcons: [], workers: [], vehicles: [], fuelSources: [], expenseHeads: [], units: [], recipes: [], boq: [],
     stockTxns: [], requisitions: [], quotations: [], pos: [], invoices: [], payments: [], debitNotes: [], attendance: [], advances: [], wageRuns: [], workOrders: [], subconBills: [],
     imprests: [], expenses: [], overheads: [], fuelPurchases: [], fuelIssues: [], dips: [], logs: [], jobCards: [], tyres: [], production: [], dispatches: [], plantCosts: [], stockpiles: [],
-    measurements: [], raBills: [], guarantees: [], bankFacilities: [], taxCredits: [], tankDips: [], salesInvoices: [], labTests: [], safety: [], siteRegisters: [], dprs: [], hireOuts: [], loans: [], subsidyClaims: [], users: [], audit: [], notifications: [], seq: {},
+    measurements: [], raBills: [], guarantees: [], bankFacilities: [], taxCredits: [], tankDips: [], salesInvoices: [], labTests: [], safety: [], siteRegisters: [], dprs: [], hireOuts: [], loans: [], subsidyClaims: [], staff: [], staffAttendance: [], staffAdvances: [], salaryRuns: [], users: [], audit: [], notifications: [], seq: {},
   };
 }

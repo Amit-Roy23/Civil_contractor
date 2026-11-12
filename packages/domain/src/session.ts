@@ -14,6 +14,12 @@ export interface Session {
   isAdmin: boolean;
 }
 
+/**
+ * Salaried staff (salaries) came after the first roles were saved: a role that has no "staff" entry yet
+ * gets it from here — the owner everything, the accountant all but delete, everyone else nothing.
+ */
+const STAFF_DEFAULT: Record<string, Perm[]> = { owner: ['view', 'add', 'edit', 'delete', 'approve'], accountant: ['view', 'add', 'edit', 'approve'] };
+
 export function buildSession(db: DB, userId: ID): Session | null {
   const user = db.users.find((u) => u.id === userId && u.active);
   if (!user) return null;
@@ -29,7 +35,7 @@ export function buildSession(db: DB, userId: ID): Session | null {
   return {
     user,
     role,
-    can: (m, p = 'view') => role.perms[m]?.includes(p) ?? false,
+    can: (m, p = 'view') => (role.perms[m] ?? (m === 'staff' ? STAFF_DEFAULT[role.id] : undefined))?.includes(p) ?? false,
     showRates: role.ratesVisible,
     allSites,
     siteIds,
